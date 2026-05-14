@@ -1,0 +1,6 @@
+{
+  "name": "КОНТУР",
+  "description": "Ukrainian air threat monitoring dashboard.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": []
+}

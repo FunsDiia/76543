@@ -1,0 +1,2492 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#05050a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>КОНТУР — Моніторинг загроз</title>
+
+<!-- Leaflet -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<!-- Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&family=Exo+2:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+<style>
+/* ═══════════════════════════════════════════════════════
+   DESIGN SYSTEM — Tactical Military HUD
+═══════════════════════════════════════════════════════ */
+:root {
+  /* Core */
+  --bg:          #05050a;
+  --bg2:         #08080f;
+  --panel:       #0c0c15;
+  --panel2:      #10101c;
+  --panel3:      #151522;
+  --line:        #1a1a2e;
+  --line2:       #222238;
+  --line3:       #2d2d4a;
+  --dim:         #3a3a5c;
+
+  /* Text */
+  --t1:  #e8e8f5;
+  --t2:  #9090b0;
+  --t3:  #555575;
+  --t4:  #333350;
+
+  /* Accent */
+  --gold:    #f5c518;
+  --gold2:   #dba800;
+  --gold-g:  rgba(245,197,24,.1);
+  --gold-gw: rgba(245,197,24,.25);
+
+  /* Threat */
+  --red:     #ff3d3d;
+  --red2:    #cc2222;
+  --red-g:   rgba(255,61,61,.14);
+  --red-gw:  rgba(255,61,61,.3);
+  --orange:  #ff7b29;
+  --ora-g:   rgba(255,123,41,.12);
+  --green:   #4cde80;
+  --grn-g:   rgba(76,222,128,.1);
+  --grn-gw:  rgba(76,222,128,.2);
+  --blue:    #4ca8f5;
+
+  /* Fonts */
+  --f-hud:  'Share Tech Mono', monospace;
+  --f-ui:   'Rajdhani', sans-serif;
+  --f-body: 'Exo 2', sans-serif;
+
+  /* Radii */
+  --r1: 4px;
+  --r2: 8px;
+  --r3: 12px;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
+
+body {
+  background: var(--bg);
+  color: var(--t1);
+  font-family: var(--f-body);
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
+  user-select: none;
+}
+
+button {
+  background: none; border: none;
+  cursor: pointer; color: inherit; font: inherit;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+a { color: inherit; text-decoration: none; }
+* { scrollbar-width: thin; scrollbar-color: var(--line3) transparent; }
+*::-webkit-scrollbar { width: 3px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background: var(--line3); border-radius: 2px; }
+
+/* ── Noise overlay ─────────────────────────── */
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
+  background-size: 128px;
+  opacity: .025;
+  pointer-events: none; z-index: 9000;
+}
+/* Scanlines */
+body::after {
+  content: '';
+  position: fixed; inset: 0;
+  background: repeating-linear-gradient(
+    0deg, transparent, transparent 3px,
+    rgba(0,0,0,.04) 3px, rgba(0,0,0,.04) 4px
+  );
+  pointer-events: none; z-index: 9001;
+}
+
+/* ═══════════════════════════════════════════════════════
+   APP SHELL
+═══════════════════════════════════════════════════════ */
+#app {
+  display: flex; flex-direction: column;
+  height: 100vh; height: 100dvh;
+  position: relative; overflow: hidden;
+}
+
+/* ── TOP BAR ───────────────────────────────── */
+#topbar {
+  display: flex; align-items: center;
+  padding: 0 14px;
+  height: 56px;
+  flex-shrink: 0;
+  background: linear-gradient(180deg, var(--bg2) 0%, rgba(8,8,15,.97) 100%);
+  border-bottom: 1px solid var(--line);
+  gap: 10px;
+  z-index: 500;
+  position: relative;
+}
+
+/* Corner decoration */
+#topbar::before, #topbar::after {
+  content: '';
+  position: absolute; bottom: -1px;
+  width: 30px; height: 2px;
+  background: var(--gold);
+}
+#topbar::before { left: 0; }
+#topbar::after  { right: 0; }
+
+/* HUD logo */
+#hud-logo {
+  display: flex; flex-direction: column;
+  gap: 1px; flex-shrink: 0;
+}
+#hud-logo-text {
+  font-family: var(--f-hud);
+  font-size: 16px; font-weight: 400;
+  color: var(--gold);
+  letter-spacing: 6px;
+  line-height: 1;
+  text-shadow: 0 0 20px rgba(245,197,24,.4);
+}
+#hud-logo-sub {
+  font-family: var(--f-hud);
+  font-size: 7px; color: var(--t3);
+  letter-spacing: 3px; text-transform: uppercase;
+}
+
+/* Divider */
+.tb-divider {
+  width: 1px; height: 28px;
+  background: var(--line2);
+  flex-shrink: 0;
+}
+
+/* Status badge */
+#status-badge {
+  flex: 1;
+  display: flex; align-items: center; justify-content: center;
+  gap: 8px;
+  background: var(--panel);
+  border: 1px solid var(--line2);
+  border-radius: var(--r1);
+  padding: 6px 12px;
+  transition: all .3s;
+}
+#status-badge.alert-mode {
+  border-color: rgba(255,61,61,.5);
+  background: var(--red-g);
+  box-shadow: 0 0 20px rgba(255,61,61,.15) inset;
+}
+#status-badge.alert-mode #badge-dot { background: var(--red); box-shadow: 0 0 8px var(--red); }
+#status-badge.alert-mode #badge-text { color: var(--red); }
+
+#badge-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--gold);
+  box-shadow: 0 0 6px var(--gold);
+  animation: pulse-dot 1.6s ease-in-out infinite;
+  flex-shrink: 0;
+}
+@keyframes pulse-dot {
+  0%,100% { opacity:1; transform:scale(1); }
+  50% { opacity:.5; transform:scale(.8); }
+}
+#badge-text {
+  font-family: var(--f-hud);
+  font-size: 11px; color: var(--t1);
+  letter-spacing: 1.5px;
+  white-space: nowrap;
+}
+#badge-count {
+  font-family: var(--f-hud);
+  font-size: 10px; color: var(--red);
+  background: var(--red-g);
+  border: 1px solid rgba(255,61,61,.3);
+  border-radius: 2px;
+  padding: 1px 6px;
+  display: none;
+}
+#badge-count.show { display: block; }
+
+/* Top buttons */
+.tb-btn {
+  width: 40px; height: 40px;
+  background: var(--panel);
+  border: 1px solid var(--line2);
+  border-radius: var(--r1);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--t2);
+  transition: all .15s;
+  flex-shrink: 0;
+  position: relative;
+  overflow: hidden;
+}
+.tb-btn::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: var(--gold);
+  opacity: 0; transition: opacity .12s;
+}
+.tb-btn:active::after { opacity: .08; }
+.tb-btn.active {
+  border-color: var(--gold2);
+  color: var(--gold);
+  background: var(--gold-g);
+  box-shadow: 0 0 12px rgba(245,197,24,.15) inset;
+}
+.tb-btn svg { position: relative; z-index: 1; }
+
+/* ── MAP AREA ──────────────────────────────── */
+#map-wrap {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Leaflet map */
+#map { width: 100%; height: 100%; }
+
+.leaflet-container { background: #05050a !important; }
+.leaflet-control-attribution { display: none !important; }
+
+/* Custom zoom */
+.leaflet-control-zoom {
+  border: 1px solid var(--line2) !important;
+  border-radius: var(--r1) !important;
+  overflow: hidden;
+  box-shadow: 0 4px 24px rgba(0,0,0,.7) !important;
+  margin: 14px 14px 0 !important;
+}
+.leaflet-control-zoom a {
+  background: var(--panel) !important;
+  color: var(--t2) !important;
+  border: none !important;
+  border-bottom: 1px solid var(--line) !important;
+  font-family: var(--f-hud) !important;
+  font-size: 15px !important;
+  width: 36px !important; height: 36px !important;
+  line-height: 36px !important;
+  transition: all .15s !important;
+  text-indent: 0 !important;
+}
+.leaflet-control-zoom a:last-child { border-bottom: none !important; }
+.leaflet-control-zoom a:hover {
+  background: var(--panel2) !important;
+  color: var(--gold) !important;
+}
+
+/* HUD corner overlays on map */
+.hud-corner {
+  position: absolute;
+  width: 20px; height: 20px;
+  z-index: 400;
+  pointer-events: none;
+}
+.hud-corner::before, .hud-corner::after { content: ''; position: absolute; background: var(--gold); opacity: .6; }
+.hud-corner.tl { top: 10px; left: 10px; }
+.hud-corner.tr { top: 10px; right: 10px; transform: scaleX(-1); }
+.hud-corner.bl { bottom: 50px; left: 10px; transform: scaleY(-1); }
+.hud-corner.br { bottom: 50px; right: 10px; transform: scale(-1); }
+.hud-corner::before { top: 0; left: 0; width: 100%; height: 1px; }
+.hud-corner::after  { top: 0; left: 0; width: 1px; height: 100%; }
+
+/* Legend */
+#map-legend {
+  position: absolute;
+  top: 14px; left: 44px;
+  background: rgba(5,5,10,.88);
+  border: 1px solid var(--line2);
+  border-radius: var(--r1);
+  padding: 8px 10px;
+  z-index: 400;
+  backdrop-filter: blur(12px);
+  display: flex; flex-direction: column; gap: 5px;
+}
+.leg-row {
+  display: flex; align-items: center; gap: 7px;
+  font-family: var(--f-hud); font-size: 9px;
+  color: var(--t3); letter-spacing: 1px;
+  text-transform: uppercase;
+}
+.leg-icon { font-size: 10px; width: 14px; text-align: center; }
+
+/* Map action buttons (bottom-right) */
+#map-actions {
+  position: absolute;
+  right: 14px; bottom: 48px;
+  display: flex; flex-direction: column; gap: 6px;
+  z-index: 400;
+}
+.map-action-btn {
+  width: 38px; height: 38px;
+  background: rgba(5,5,10,.9);
+  border: 1px solid var(--line2);
+  border-radius: var(--r1);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--t2); font-size: 15px;
+  backdrop-filter: blur(8px);
+  transition: all .15s;
+}
+.map-action-btn:active { background: var(--panel2); color: var(--t1); border-color: var(--line3); }
+.map-action-btn.toggled { color: var(--gold); border-color: rgba(245,197,24,.4); background: var(--gold-g); }
+
+/* Time strip */
+#time-strip {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 40px;
+  background: linear-gradient(to top, rgba(5,5,10,.98) 40%, transparent);
+  display: flex; align-items: flex-end; justify-content: center;
+  padding-bottom: 5px;
+  gap: 14px;
+  pointer-events: none;
+  z-index: 300;
+}
+#live-clock {
+  font-family: var(--f-hud); font-size: 14px;
+  color: var(--t3); letter-spacing: 3px;
+}
+#update-ticker {
+  font-family: var(--f-hud); font-size: 9px;
+  color: var(--t4); letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+/* Popup */
+.leaflet-popup-content-wrapper {
+  background: var(--panel2) !important;
+  border: 1px solid var(--line2) !important;
+  border-radius: var(--r2) !important;
+  box-shadow: 0 12px 40px rgba(0,0,0,.8), 0 0 0 1px rgba(255,255,255,.03) !important;
+  color: var(--t1) !important;
+  font-family: var(--f-body) !important;
+  padding: 0 !important;
+  overflow: hidden;
+}
+.leaflet-popup-content { margin: 0 !important; }
+.leaflet-popup-tip-container { display: none !important; }
+.leaflet-popup-close-button {
+  color: var(--t3) !important;
+  font-size: 16px !important;
+  top: 10px !important; right: 12px !important;
+  z-index: 10;
+}
+.leaflet-popup-close-button:hover { color: var(--t1) !important; }
+
+/* Oblast popup content */
+.ob-popup {
+  min-width: 220px;
+  overflow: hidden;
+}
+.ob-popup-header {
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid var(--line);
+  display: flex; align-items: center; gap: 8px;
+}
+.ob-popup-flag {
+  font-size: 16px;
+}
+.ob-popup-name {
+  font-family: var(--f-ui);
+  font-size: 16px; font-weight: 700;
+  color: var(--t1); letter-spacing: .5px; flex: 1;
+}
+.ob-popup-status-pill {
+  font-family: var(--f-hud); font-size: 9px;
+  padding: 2px 7px; border-radius: 2px;
+  letter-spacing: 1px; text-transform: uppercase;
+  font-weight: 400;
+}
+.ob-popup-status-pill.threat   { background: var(--red-g); color: var(--red); border: 1px solid rgba(255,61,61,.3); }
+.ob-popup-status-pill.clear    { background: var(--grn-g); color: var(--green); border: 1px solid rgba(76,222,128,.3); }
+.ob-popup-status-pill.neutral  { background: var(--panel3); color: var(--t3); border: 1px solid var(--line); }
+.ob-popup-body { padding: 10px 14px; }
+.ob-popup-alert {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 7px 0; border-bottom: 1px solid var(--line);
+  font-size: 12px; color: var(--t2); line-height: 1.5;
+}
+.ob-popup-alert:last-of-type { border-bottom: none; }
+.ob-popup-alert-icon {
+  font-size: 11px; margin-top: 1px;
+  font-family: var(--f-hud); flex-shrink: 0;
+}
+.ob-popup-empty {
+  font-family: var(--f-hud); font-size: 10px;
+  color: var(--t4); text-align: center; padding: 8px 0;
+  letter-spacing: 1px;
+}
+.ob-popup-footer {
+  padding: 8px 14px;
+  border-top: 1px solid var(--line);
+  display: flex; gap: 6px;
+}
+.ob-popup-btn {
+  flex: 1; padding: 7px;
+  border-radius: var(--r1);
+  font-family: var(--f-hud); font-size: 10px;
+  letter-spacing: 1px; text-transform: uppercase;
+  transition: all .15s; text-align: center;
+}
+.ob-popup-btn.primary {
+  background: var(--gold-g); border: 1px solid rgba(245,197,24,.35);
+  color: var(--gold);
+}
+.ob-popup-btn.primary:active { background: rgba(245,197,24,.2); }
+.ob-popup-btn.secondary {
+  background: var(--panel3); border: 1px solid var(--line2);
+  color: var(--t3);
+}
+.ob-popup-btn.secondary:active { background: var(--line); }
+
+/* Threat pin markers */
+.t-pin {
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--f-hud); font-weight: 400;
+  border-radius: 3px; border: 1px solid;
+  backdrop-filter: blur(4px);
+  cursor: pointer;
+  text-shadow: 0 0 8px currentColor;
+  transition: transform .1s;
+}
+.t-pin:active { transform: scale(.9) !important; }
+.t-pin.shahed    {
+  color: var(--gold); border-color: rgba(245,197,24,.7);
+  background: rgba(5,5,10,.85);
+  box-shadow: 0 0 10px rgba(245,197,24,.4), 0 0 24px rgba(245,197,24,.15);
+  animation: tpin-s 2s ease-in-out infinite;
+}
+.t-pin.rocket    {
+  color: var(--orange); border-color: rgba(255,123,41,.7);
+  background: rgba(5,5,10,.85);
+  box-shadow: 0 0 10px rgba(255,123,41,.4), 0 0 24px rgba(255,123,41,.15);
+  animation: tpin-r 1.4s ease-in-out infinite;
+}
+.t-pin.ballistic {
+  color: var(--red); border-color: rgba(255,61,61,.8);
+  background: rgba(5,5,10,.85);
+  box-shadow: 0 0 12px rgba(255,61,61,.5), 0 0 30px rgba(255,61,61,.2);
+  animation: tpin-b .85s ease-in-out infinite;
+}
+.t-pin.all_clear {
+  color: var(--green); border-color: rgba(76,222,128,.6);
+  background: rgba(5,5,10,.85);
+  box-shadow: 0 0 8px rgba(76,222,128,.3);
+}
+@keyframes tpin-s { 0%,100%{transform:scale(1) translate(-50%,-50%)} 50%{transform:scale(1.18) translate(-50%,-50%)} }
+@keyframes tpin-r { 0%,100%{transform:scale(1) translate(-50%,-50%)} 50%{transform:scale(1.22) translate(-50%,-50%)} }
+@keyframes tpin-b { 0%,100%{transform:scale(1) translate(-50%,-50%)} 50%{transform:scale(1.28) translate(-50%,-50%)} }
+
+/* Radar overlay */
+#radar-screen {
+  position: absolute; inset: 0;
+  background: radial-gradient(ellipse at center, #08090f 0%, var(--bg) 70%);
+  display: none; flex-direction: column;
+  align-items: center; justify-content: center;
+  z-index: 450;
+}
+#radar-screen.open { display: flex; }
+#radar-canvas {
+  width: min(88vw, 400px);
+  height: min(88vw, 400px);
+  border: 1px solid var(--line2);
+  border-radius: 50%;
+  box-shadow: 0 0 40px rgba(245,197,24,.08) inset, 0 0 60px rgba(0,0,0,.8);
+}
+#radar-title {
+  margin-bottom: 14px;
+  font-family: var(--f-hud); font-size: 10px;
+  color: var(--t3); letter-spacing: 4px; text-transform: uppercase;
+}
+#radar-stats {
+  margin-top: 14px;
+  display: flex; gap: 20px;
+}
+.radar-stat {
+  text-align: center;
+}
+.radar-stat-val {
+  font-family: var(--f-hud); font-size: 22px;
+  line-height: 1;
+}
+.radar-stat-lbl {
+  font-family: var(--f-hud); font-size: 9px;
+  color: var(--t3); letter-spacing: 2px; margin-top: 2px;
+}
+#radar-close {
+  position: absolute; top: 14px; right: 14px;
+  width: 38px; height: 38px;
+  background: var(--panel2); border: 1px solid var(--line2);
+  border-radius: var(--r1);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--t2); font-size: 16px;
+  transition: all .15s;
+}
+#radar-close:active { background: var(--panel3); color: var(--t1); }
+
+/* ═══════════════════════════════════════════════════════
+   BOTTOM SHEET
+═══════════════════════════════════════════════════════ */
+#sheet {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  background: var(--panel);
+  border-top: 1px solid var(--line2);
+  border-radius: 14px 14px 0 0;
+  max-height: 92vh;
+  transform: translateY(calc(100% - 64px));
+  transition: transform .4s cubic-bezier(.25,.01,.15,1);
+  display: flex; flex-direction: column;
+  z-index: 450;
+  will-change: transform;
+  box-shadow: 0 -12px 40px rgba(0,0,0,.6);
+}
+#sheet.open { transform: translateY(0); }
+
+/* Handle */
+#sheet-handle {
+  flex-shrink: 0;
+  padding: 10px 0 0;
+  display: flex; flex-direction: column; align-items: center;
+  cursor: pointer; -webkit-tap-highlight-color: transparent;
+  border-radius: 14px 14px 0 0;
+  overflow: hidden;
+}
+/* Top accent line */
+#sheet-handle::before {
+  content: '';
+  position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+  width: 50%; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--gold2), transparent);
+  opacity: .5;
+}
+.sheet-knob {
+  width: 32px; height: 3px;
+  background: var(--line3); border-radius: 2px;
+}
+#sheet-peek {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 14px 10px; width: 100%;
+}
+#peek-icon { font-size: 13px; flex-shrink: 0; }
+#peek-label {
+  font-family: var(--f-ui); font-size: 13px;
+  font-weight: 600; letter-spacing: .5px; flex: 1;
+  color: var(--t2);
+}
+#peek-count {
+  font-family: var(--f-hud); font-size: 10px;
+  padding: 2px 9px; border-radius: 2px;
+  background: var(--red-g); color: var(--red);
+  border: 1px solid rgba(255,61,61,.3); font-weight: 400;
+  min-width: 24px; text-align: center;
+}
+#peek-count.safe {
+  background: var(--grn-g); color: var(--green);
+  border-color: rgba(76,222,128,.3);
+}
+
+/* Support CTA */
+#cta-support {
+  margin: 0 12px 10px;
+  padding: 11px;
+  background: linear-gradient(135deg, #5c0f0f 0%, #991a1a 50%, #7b1010 100%);
+  border: 1px solid rgba(255,80,80,.18);
+  border-radius: var(--r1);
+  font-family: var(--f-hud); font-size: 11px;
+  letter-spacing: 2px; text-transform: uppercase;
+  color: rgba(255,230,230,.85);
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  flex-shrink: 0;
+  transition: all .15s;
+  position: relative; overflow: hidden;
+}
+#cta-support::before {
+  content: '';
+  position: absolute; left: -100%; top: 0; bottom: 0; width: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.06), transparent);
+  transition: left .5s;
+}
+#cta-support:active::before { left: 100%; }
+#cta-support:active { transform: scale(.99); opacity: .9; }
+.cta-heart { color: #ff6666; animation: heartbeat 1.4s ease-in-out infinite; }
+@keyframes heartbeat { 0%,100%{transform:scale(1)} 14%{transform:scale(1.25)} 28%{transform:scale(1)} 42%{transform:scale(1.15)} }
+
+/* Tabs */
+#sheet-tabs {
+  display: flex; flex-shrink: 0;
+  border-bottom: 1px solid var(--line);
+  padding: 0 4px; gap: 2px;
+}
+.s-tab {
+  flex: 1; padding: 10px 4px;
+  font-family: var(--f-hud); font-size: 10px;
+  letter-spacing: 1.5px; text-transform: uppercase;
+  color: var(--t4); border-bottom: 2px solid transparent;
+  transition: all .18s;
+}
+.s-tab.on { color: var(--gold); border-bottom-color: var(--gold); }
+
+/* Alert list */
+#alert-scroll {
+  flex: 1; overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+#alert-list { padding-bottom: 20px; }
+
+/* Alert row */
+.a-row {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer; transition: background .1s;
+  position: relative;
+  border-left: 2px solid transparent;
+}
+.a-row::after {
+  content: '';
+  position: absolute; left: 0; top: 0; bottom: 0;
+  width: 2px; opacity: 0; transition: opacity .2s;
+}
+.a-row:active { background: var(--panel2); }
+.a-row.expanded { background: var(--panel2); }
+.a-row.critical   { border-left-color: var(--red);    }
+.a-row.high       { border-left-color: var(--orange);  }
+.a-row.medium     { border-left-color: var(--gold2);   }
+.a-row.low        { border-left-color: var(--t4);      }
+.a-row.all-clear  { border-left-color: var(--green);   }
+
+.a-time {
+  font-family: var(--f-hud); font-size: 10px;
+  color: var(--t4); min-width: 38px; flex-shrink: 0; margin-top: 1px;
+}
+
+.a-badge {
+  width: 26px; height: 26px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 3px; border: 1px solid;
+  font-family: var(--f-hud); font-size: 11px;
+}
+.a-badge.shahed    { color: var(--gold);   border-color: rgba(245,197,24,.35); background: rgba(245,197,24,.07); }
+.a-badge.rocket    { color: var(--orange); border-color: rgba(255,123,41,.35); background: rgba(255,123,41,.07); }
+.a-badge.ballistic { color: var(--red);    border-color: rgba(255,61,61,.35);  background: rgba(255,61,61,.07); }
+.a-badge.all-clear { color: var(--green);  border-color: rgba(76,222,128,.35); background: rgba(76,222,128,.07); }
+.a-badge.unknown   { color: var(--t3);     border-color: var(--line2);          background: var(--panel2); }
+
+.a-body { flex: 1; min-width: 0; }
+.a-region {
+  font-family: var(--f-ui); font-size: 14px; font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  letter-spacing: .3px;
+}
+.a-region.ac { color: var(--green); }
+.a-sub {
+  font-size: 11px; color: var(--t3); margin-top: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  line-height: 1.3;
+}
+.a-chev {
+  color: var(--t4); font-family: var(--f-hud);
+  font-size: 11px; flex-shrink: 0; margin-top: 2px;
+  transition: transform .2s;
+}
+.a-row.expanded .a-chev { transform: rotate(180deg); }
+
+/* Expanded detail */
+.a-detail {
+  display: none;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--line);
+  padding: 12px 14px 14px;
+  animation: detail-in .2s ease;
+}
+@keyframes detail-in {
+  from { opacity:0; transform:translateY(-4px); }
+  to   { opacity:1; transform:translateY(0); }
+}
+.a-detail.open { display: block; }
+.d-title { font-family: var(--f-ui); font-size: 14px; font-weight: 600; color: var(--t1); margin-bottom: 6px; line-height: 1.4; }
+.d-body  { font-size: 13px; color: var(--t2); line-height: 1.65; margin-bottom: 10px; }
+.d-raw   {
+  font-family: var(--f-hud); font-size: 10px; color: var(--t3);
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--r1); padding: 8px 10px; margin-bottom: 10px;
+  line-height: 1.7; white-space: pre-wrap; word-break: break-word;
+  max-height: 80px; overflow-y: auto;
+}
+.d-tags { display: flex; flex-wrap: wrap; gap: 5px; }
+.d-tag {
+  font-family: var(--f-hud); font-size: 9px;
+  padding: 2px 8px; border-radius: 2px;
+  background: var(--panel3); border: 1px solid var(--line2); color: var(--t3);
+  letter-spacing: .5px;
+}
+.d-tag.sev-critical { background: var(--red-g);  border-color: rgba(255,61,61,.4); color: var(--red); }
+.d-tag.sev-high     { background: var(--ora-g);  border-color: rgba(255,123,41,.4); color: var(--orange); }
+.d-tag.sev-medium   { background: var(--gold-g); border-color: rgba(245,197,24,.35); color: var(--gold); }
+.d-tag.ai-h         { background: var(--grn-g);  border-color: rgba(76,222,128,.35); color: var(--green); }
+.d-tag.channel      { color: var(--blue); border-color: rgba(76,168,245,.3); background: rgba(76,168,245,.07); }
+.d-map-btn {
+  margin-top: 10px; padding: 8px 12px;
+  background: var(--panel3); border: 1px solid var(--line2);
+  border-radius: var(--r1);
+  font-family: var(--f-hud); font-size: 10px;
+  color: var(--gold); letter-spacing: 1px; text-transform: uppercase;
+  width: 100%; text-align: center; transition: all .15s;
+}
+.d-map-btn:active { background: var(--gold-g); }
+
+/* Empty state */
+.empty {
+  padding: 48px 24px; text-align: center;
+}
+.empty-icon { font-size: 32px; margin-bottom: 10px; }
+.empty-text {
+  font-family: var(--f-hud); font-size: 11px;
+  color: var(--t4); letter-spacing: 2px; text-transform: uppercase; line-height: 2;
+}
+
+/* Stats tab */
+.stats-body { padding: 14px; }
+.stats-section-lbl {
+  font-family: var(--f-hud); font-size: 9px;
+  color: var(--t4); letter-spacing: 3px; text-transform: uppercase;
+  margin: 0 0 10px; padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+}
+.stats-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px;
+}
+.stat-card {
+  background: var(--panel2); border: 1px solid var(--line);
+  border-radius: var(--r1); padding: 12px 10px; text-align: center;
+  transition: border-color .2s;
+}
+.stat-card:hover { border-color: var(--line3); }
+.stat-num {
+  font-family: var(--f-hud); font-size: 28px;
+  font-weight: 400; line-height: 1;
+}
+.stat-lbl { font-family: var(--f-hud); font-size: 9px; color: var(--t4); margin-top: 5px; letter-spacing: 1px; }
+.sev-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.sev-name { font-family: var(--f-hud); font-size: 10px; color: var(--t2); min-width: 80px; letter-spacing: .5px; }
+.sev-track { flex: 1; height: 4px; background: var(--panel3); border-radius: 2px; overflow: hidden; }
+.sev-bar   { height: 100%; border-radius: 2px; transition: width .7s ease; }
+.sev-n     { font-family: var(--f-hud); font-size: 10px; min-width: 18px; text-align: right; }
+.regions-list {
+  font-family: var(--f-hud); font-size: 10px; color: var(--t2);
+  letter-spacing: .5px; line-height: 2.2;
+  background: var(--panel2); border: 1px solid var(--line);
+  border-radius: var(--r1); padding: 10px 12px; margin-bottom: 16px;
+}
+
+/* ═══════════════════════════════════════════════════════
+   SIDE MENU
+═══════════════════════════════════════════════════════ */
+#menu-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.7);
+  z-index: 600; display: none; opacity: 0;
+  transition: opacity .25s;
+  backdrop-filter: blur(3px);
+}
+#menu-backdrop.open { display: block; opacity: 1; }
+
+#menu-panel {
+  position: fixed; top: 0; left: 0; bottom: 0;
+  width: min(80vw, 310px);
+  background: var(--panel);
+  border-right: 1px solid var(--line2);
+  z-index: 601;
+  display: flex; flex-direction: column;
+  transform: translateX(-100%);
+  transition: transform .32s cubic-bezier(.3,0,.15,1);
+  overflow: hidden;
+}
+#menu-panel.open { transform: translateX(0); }
+
+/* Menu top strip */
+#menu-top {
+  flex-shrink: 0;
+  padding: 52px 18px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg2);
+  position: relative;
+}
+#menu-top::after {
+  content: '';
+  position: absolute; bottom: -1px; left: 0;
+  width: 40%; height: 1px;
+  background: linear-gradient(90deg, var(--gold), transparent);
+}
+#menu-logo {
+  font-family: var(--f-hud); font-size: 20px;
+  color: var(--gold); letter-spacing: 6px;
+  text-shadow: 0 0 20px rgba(245,197,24,.3);
+  margin-bottom: 2px;
+}
+#menu-tagline {
+  font-family: var(--f-hud); font-size: 9px;
+  color: var(--t4); letter-spacing: 2px; text-transform: uppercase;
+}
+#menu-version {
+  position: absolute; top: 52px; right: 18px;
+  font-family: var(--f-hud); font-size: 9px; color: var(--t4);
+  background: var(--panel2); border: 1px solid var(--line);
+  border-radius: 2px; padding: 2px 7px;
+}
+#menu-close-btn {
+  position: absolute; top: 54px; right: 18px;
+  width: 30px; height: 30px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--t3); font-size: 16px;
+  border: 1px solid var(--line2); border-radius: var(--r1);
+  background: var(--panel2); transition: all .15s;
+}
+#menu-close-btn:active { background: var(--line); color: var(--t1); }
+
+/* Live stats bar in menu */
+#menu-live {
+  flex-shrink: 0;
+  display: flex; border-bottom: 1px solid var(--line);
+}
+.menu-stat {
+  flex: 1; padding: 10px 8px; text-align: center;
+  border-right: 1px solid var(--line);
+}
+.menu-stat:last-child { border-right: none; }
+.menu-stat-n {
+  font-family: var(--f-hud); font-size: 20px; line-height: 1;
+}
+.menu-stat-l {
+  font-family: var(--f-hud); font-size: 8px;
+  color: var(--t4); letter-spacing: 1px; margin-top: 3px;
+}
+
+/* Menu sections */
+#menu-scroll { flex: 1; overflow-y: auto; }
+
+.menu-section-label {
+  padding: 12px 18px 5px;
+  font-family: var(--f-hud); font-size: 8px;
+  color: var(--t4); letter-spacing: 3px; text-transform: uppercase;
+}
+.menu-item {
+  display: flex; align-items: center;
+  padding: 14px 18px; gap: 12px;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer; transition: all .12s;
+  position: relative;
+}
+.menu-item::after {
+  content: '';
+  position: absolute; left: 0; top: 0; bottom: 0;
+  width: 2px; background: var(--gold); opacity: 0;
+  transition: opacity .15s;
+}
+.menu-item:active { background: var(--panel2); }
+.menu-item:active::after { opacity: 1; }
+.menu-item-icon {
+  width: 32px; height: 32px;
+  background: var(--panel2); border: 1px solid var(--line2);
+  border-radius: var(--r1);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px; flex-shrink: 0;
+  transition: all .15s;
+}
+.menu-item:active .menu-item-icon { border-color: var(--gold2); background: var(--gold-g); }
+.menu-item-info { flex: 1; }
+.menu-item-title {
+  font-family: var(--f-ui); font-size: 14px; font-weight: 600;
+  color: var(--t1); letter-spacing: .3px;
+}
+.menu-item-desc {
+  font-family: var(--f-hud); font-size: 9px;
+  color: var(--t4); letter-spacing: .5px; margin-top: 1px;
+}
+.menu-item-arrow {
+  color: var(--t4); font-family: var(--f-hud); font-size: 13px;
+  transition: transform .15s;
+}
+.menu-item:active .menu-item-arrow { transform: translateX(3px); }
+.menu-item.ext .menu-item-arrow { font-size: 11px; }
+
+/* Menu footer */
+#menu-footer {
+  flex-shrink: 0;
+  padding: 12px 18px;
+  border-top: 1px solid var(--line);
+  background: var(--bg2);
+  display: flex; align-items: center; justify-content: space-between;
+}
+#menu-footer-left {
+  font-family: var(--f-hud); font-size: 9px;
+  color: var(--t4); letter-spacing: 2px;
+}
+#menu-footer-right {
+  font-family: var(--f-hud); font-size: 9px;
+  color: var(--t4);
+}
+
+/* ═══════════════════════════════════════════════════════
+   FULL SCREENS (Sources, FAQ, Settings)
+═══════════════════════════════════════════════════════ */
+.f-screen {
+  position: fixed; inset: 0;
+  background: var(--bg);
+  z-index: 700;
+  display: none; flex-direction: column;
+  overflow: hidden;
+}
+.f-screen.open { display: flex; }
+.f-screen-header {
+  flex-shrink: 0;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line2);
+  padding: 50px 18px 14px;
+  position: relative;
+}
+.f-screen-header::after {
+  content: '';
+  position: absolute; bottom: -1px; left: 0; width: 30%; height: 1px;
+  background: linear-gradient(90deg, var(--gold), transparent);
+}
+.f-back {
+  display: flex; align-items: center; gap: 6px;
+  font-family: var(--f-hud); font-size: 9px;
+  color: var(--gold); letter-spacing: 2px; text-transform: uppercase;
+  margin-bottom: 10px; cursor: pointer;
+  width: fit-content;
+  transition: opacity .15s;
+}
+.f-back:active { opacity: .7; }
+.f-title {
+  font-family: var(--f-ui); font-size: 22px; font-weight: 700;
+  letter-spacing: .5px; color: var(--t1);
+}
+.f-body { flex: 1; overflow-y: auto; }
+
+/* Sources */
+.src-section-lbl {
+  padding: 14px 18px 6px;
+  font-family: var(--f-hud); font-size: 8px;
+  color: var(--t4); letter-spacing: 3px; text-transform: uppercase;
+  border-bottom: 1px solid var(--line);
+}
+.src-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 13px 18px;
+  border-bottom: 1px solid var(--line);
+  transition: background .12s; cursor: default;
+}
+.src-row:active { background: var(--panel2); }
+.src-avatar {
+  width: 38px; height: 38px;
+  background: var(--panel2); border: 1px solid var(--line2);
+  border-radius: var(--r2); flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px;
+}
+.src-info { flex: 1; min-width: 0; }
+.src-name {
+  font-family: var(--f-ui); font-size: 14px; font-weight: 600;
+  color: var(--t1); letter-spacing: .3px;
+}
+.src-handle {
+  font-family: var(--f-hud); font-size: 10px;
+  color: var(--t4); margin-top: 1px;
+}
+.src-badge {
+  font-family: var(--f-hud); font-size: 9px; letter-spacing: 1px;
+  padding: 3px 8px; border-radius: 2px;
+  flex-shrink: 0;
+}
+.src-badge.primary {
+  background: var(--gold-g); color: var(--gold);
+  border: 1px solid rgba(245,197,24,.3);
+}
+.src-badge.secondary {
+  background: var(--panel3); color: var(--t3);
+  border: 1px solid var(--line);
+}
+.src-support-btn {
+  font-family: var(--f-hud); font-size: 9px; letter-spacing: 1px; text-transform: uppercase;
+  padding: 5px 10px; border-radius: var(--r1);
+  background: var(--panel3); border: 1px solid var(--line2);
+  color: var(--t3); transition: all .15s;
+}
+.src-support-btn:active { background: var(--gold-g); color: var(--gold); border-color: rgba(245,197,24,.3); }
+
+/* FAQ */
+.faq-item { border-bottom: 1px solid var(--line); }
+.faq-q {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 18px; cursor: pointer; transition: background .12s;
+}
+.faq-q:active { background: var(--panel2); }
+.faq-q-text {
+  font-family: var(--f-ui); font-size: 14px; font-weight: 500; flex: 1;
+  padding-right: 12px; color: var(--t1); line-height: 1.4;
+}
+.faq-chev {
+  color: var(--t4); font-family: var(--f-hud); font-size: 11px;
+  transition: transform .22s; flex-shrink: 0;
+}
+.faq-item.open .faq-chev { transform: rotate(180deg); }
+.faq-a {
+  display: none; padding: 0 18px 16px;
+  font-size: 13px; color: var(--t2); line-height: 1.75;
+}
+.faq-a a { color: var(--gold); }
+.faq-item.open .faq-a { display: block; }
+
+/* Settings */
+.setting-group { padding: 4px 0; border-bottom: 1px solid var(--line); }
+.setting-section-lbl {
+  padding: 12px 18px 5px;
+  font-family: var(--f-hud); font-size: 8px;
+  color: var(--t4); letter-spacing: 3px; text-transform: uppercase;
+}
+.setting-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 13px 18px;
+}
+.setting-left { flex: 1; }
+.setting-name {
+  font-family: var(--f-ui); font-size: 14px; font-weight: 500; color: var(--t1);
+}
+.setting-desc {
+  font-family: var(--f-hud); font-size: 10px; color: var(--t4);
+  margin-top: 2px; letter-spacing: .5px;
+}
+.toggle {
+  width: 44px; height: 24px;
+  background: var(--panel3); border: 1px solid var(--line2);
+  border-radius: 12px; position: relative;
+  cursor: pointer; transition: all .22s; flex-shrink: 0;
+}
+.toggle.on { background: var(--gold2); border-color: var(--gold2); }
+.toggle-knob {
+  position: absolute; top: 3px; left: 3px;
+  width: 16px; height: 16px;
+  background: var(--dim); border-radius: 50%;
+  transition: transform .22s, background .22s;
+}
+.toggle.on .toggle-knob { transform: translateX(20px); background: #fff; }
+.setting-btn {
+  font-family: var(--f-hud); font-size: 10px; letter-spacing: 1px; text-transform: uppercase;
+  padding: 6px 12px; border-radius: var(--r1);
+  background: var(--panel3); border: 1px solid var(--line2);
+  color: var(--t2); transition: all .15s;
+}
+.setting-btn:active { background: var(--gold-g); color: var(--gold); border-color: rgba(245,197,24,.3); }
+.setting-btn.danger:active { background: var(--red-g); color: var(--red); border-color: rgba(255,61,61,.3); }
+
+/* ═══════════════════════════════════════════════════════
+   TOAST
+═══════════════════════════════════════════════════════ */
+#toast {
+  position: fixed; top: 68px; left: 50%;
+  transform: translateX(-50%) translateY(-8px);
+  background: var(--panel2);
+  border: 1px solid var(--line3);
+  border-radius: var(--r1);
+  padding: 9px 18px;
+  font-family: var(--f-hud); font-size: 11px;
+  letter-spacing: 1px;
+  white-space: nowrap; z-index: 9900;
+  opacity: 0; transition: opacity .22s, transform .22s;
+  pointer-events: none;
+  box-shadow: 0 8px 32px rgba(0,0,0,.7);
+  max-width: calc(100vw - 40px);
+  white-space: normal; text-align: center;
+}
+#toast.show {
+  opacity: 1; transform: translateX(-50%) translateY(0);
+}
+</style>
+</head>
+
+<body>
+<div id="app">
+
+  <!-- ═══ TOP BAR ═══ -->
+  <div id="topbar">
+    <div id="hud-logo">
+      <div id="hud-logo-text">КОНТУР</div>
+      <div id="hud-logo-sub">Threat Monitor</div>
+    </div>
+
+    <div class="tb-divider"></div>
+
+    <div id="status-badge">
+      <div id="badge-dot"></div>
+      <span id="badge-text">МОНІТОРИНГ</span>
+      <span id="badge-count"></span>
+    </div>
+
+    <div class="tb-divider"></div>
+
+    <button class="tb-btn" id="btn-menu" title="Меню [M]">
+      <svg width="16" height="12" viewBox="0 0 16 12" fill="none">
+        <rect width="16" height="1.6" rx=".8" fill="currentColor"/>
+        <rect y="5.2" width="11" height="1.6" rx=".8" fill="currentColor"/>
+        <rect y="10.4" width="7" height="1.6" rx=".8" fill="currentColor"/>
+      </svg>
+    </button>
+
+    <button class="tb-btn" id="btn-radar" title="Радар [R]">
+      <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+        <circle cx="9" cy="9" r="7.5" stroke="currentColor" stroke-width="1"/>
+        <circle cx="9" cy="9" r="4.5" stroke="currentColor" stroke-width=".7" stroke-dasharray="2 1.5"/>
+        <circle cx="9" cy="9" r="1.8" stroke="currentColor" stroke-width=".7"/>
+        <line x1="9" y1="1.5" x2="9" y2="16.5" stroke="currentColor" stroke-width=".6"/>
+        <line x1="1.5" y1="9" x2="16.5" y2="9" stroke="currentColor" stroke-width=".6"/>
+      </svg>
+    </button>
+  </div>
+
+  <!-- ═══ MAP ═══ -->
+  <div id="map-wrap">
+    <!-- HUD corners -->
+    <div class="hud-corner tl"></div>
+    <div class="hud-corner tr"></div>
+    <div class="hud-corner bl"></div>
+    <div class="hud-corner br"></div>
+
+    <!-- Legend -->
+    <div id="map-legend">
+      <div class="leg-row">
+        <span class="leg-icon" style="color:#f5c518">▲</span>
+        <span>БПЛА / Shahed</span>
+      </div>
+      <div class="leg-row">
+        <span class="leg-icon" style="color:#ff7b29">✦</span>
+        <span>Ракети</span>
+      </div>
+      <div class="leg-row">
+        <span class="leg-icon" style="color:#ff3d3d">◆</span>
+        <span>Балістичні</span>
+      </div>
+      <div class="leg-row">
+        <span class="leg-icon" style="color:#4cde80">✓</span>
+        <span>Відбій</span>
+      </div>
+    </div>
+
+    <!-- Map action buttons -->
+    <div id="map-actions">
+      <button class="map-action-btn" id="btn-locate" title="Моя локація">📍</button>
+      <button class="map-action-btn toggled" id="btn-markers" title="Маркери загроз">▲</button>
+      <button class="map-action-btn toggled" id="btn-regions" title="Підсвітка регіонів">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <path d="M2 8 L8 2 L14 8 L8 14 Z" stroke="currentColor" stroke-width="1.2" fill="none"/>
+          <circle cx="8" cy="8" r="2" fill="currentColor"/>
+        </svg>
+      </button>
+      <button class="map-action-btn" id="btn-home" title="Центр України">
+        <svg width="16" height="14" viewBox="0 0 16 14" fill="none">
+          <path d="M8 1L1 6.5V13H6V9H10V13H15V6.5L8 1Z" stroke="currentColor" stroke-width="1.2" fill="none"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Real map -->
+    <div id="map"></div>
+
+    <!-- Radar screen overlay -->
+    <div id="radar-screen">
+      <button id="radar-close">✕</button>
+      <div id="radar-title">[ ТАКТИЧНИЙ РАДАР ]</div>
+      <canvas id="radar-canvas" width="400" height="400"></canvas>
+      <div id="radar-stats">
+        <div class="radar-stat">
+          <div class="radar-stat-val" id="r-bpla" style="color:var(--gold)">0</div>
+          <div class="radar-stat-lbl">БПЛА</div>
+        </div>
+        <div class="radar-stat">
+          <div class="radar-stat-val" id="r-rockets" style="color:var(--orange)">0</div>
+          <div class="radar-stat-lbl">РАКЕТИ</div>
+        </div>
+        <div class="radar-stat">
+          <div class="radar-stat-val" id="r-balistic" style="color:var(--red)">0</div>
+          <div class="radar-stat-lbl">БАЛІСТИЧНІ</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Time strip -->
+    <div id="time-strip">
+      <span id="update-ticker">UPLINK ACTIVE</span>
+      <span id="live-clock">--:--:--</span>
+    </div>
+  </div>
+
+  <!-- ═══ BOTTOM SHEET ═══ -->
+  <div id="sheet">
+    <div id="sheet-handle">
+      <div class="sheet-knob"></div>
+      <div id="sheet-peek">
+        <span id="peek-icon">▲</span>
+        <span id="peek-label">Активні загрози</span>
+        <span id="peek-count" class="safe">0</span>
+      </div>
+    </div>
+
+    <button id="cta-support">
+      <span class="cta-heart">♥</span>
+      ПІДТРИМАТИ КОНТУР
+    </button>
+
+    <div id="sheet-tabs">
+      <button class="s-tab on" data-tab="active">Актуальні</button>
+      <button class="s-tab"    data-tab="past">Архів</button>
+      <button class="s-tab"    data-tab="stats">Статистика</button>
+    </div>
+
+    <div id="alert-scroll">
+      <div id="alert-list">
+        <div class="empty">
+          <div class="empty-icon">📡</div>
+          <div class="empty-text">ЗАВАНТАЖЕННЯ ДАНИХ…</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /app -->
+
+<!-- ═══ MENU ═══ -->
+<div id="menu-backdrop"></div>
+<div id="menu-panel">
+  <div id="menu-top">
+    <div id="menu-logo">КОНТУР</div>
+    <div id="menu-tagline">Моніторинг повітряних загроз</div>
+    <button id="menu-close-btn">✕</button>
+  </div>
+
+  <!-- Live mini-stats -->
+  <div id="menu-live">
+    <div class="menu-stat">
+      <div class="menu-stat-n" id="ms-bpla" style="color:var(--gold)">0</div>
+      <div class="menu-stat-l">БПЛА</div>
+    </div>
+    <div class="menu-stat">
+      <div class="menu-stat-n" id="ms-rockets" style="color:var(--orange)">0</div>
+      <div class="menu-stat-l">РАКЕТИ</div>
+    </div>
+    <div class="menu-stat">
+      <div class="menu-stat-n" id="ms-balistic" style="color:var(--red)">0</div>
+      <div class="menu-stat-l">БАЛІСТИЧНІ</div>
+    </div>
+    <div class="menu-stat">
+      <div class="menu-stat-n" id="ms-total" style="color:var(--t2)">0</div>
+      <div class="menu-stat-l">РАЗОМ</div>
+    </div>
+  </div>
+
+  <div id="menu-scroll">
+    <div class="menu-section-label">Навігація</div>
+
+    <div class="menu-item" id="mi-sources">
+      <div class="menu-item-icon">📡</div>
+      <div class="menu-item-info">
+        <div class="menu-item-title">Джерела</div>
+        <div class="menu-item-desc">Telegram-канали моніторингу</div>
+      </div>
+      <span class="menu-item-arrow">›</span>
+    </div>
+
+    <div class="menu-item" id="mi-faq">
+      <div class="menu-item-icon">❓</div>
+      <div class="menu-item-info">
+        <div class="menu-item-title">Часті питання</div>
+        <div class="menu-item-desc">Як працює КОНТУР</div>
+      </div>
+      <span class="menu-item-arrow">›</span>
+    </div>
+
+    <div class="menu-item" id="mi-settings">
+      <div class="menu-item-icon">⚙️</div>
+      <div class="menu-item-info">
+        <div class="menu-item-title">Налаштування</div>
+        <div class="menu-item-desc">Відображення та сповіщення</div>
+      </div>
+      <span class="menu-item-arrow">›</span>
+    </div>
+
+    <div class="menu-item" id="mi-radar">
+      <div class="menu-item-icon">🎯</div>
+      <div class="menu-item-info">
+        <div class="menu-item-title">Тактичний радар</div>
+        <div class="menu-item-desc">Відображення загроз на радарі</div>
+      </div>
+      <span class="menu-item-arrow">›</span>
+    </div>
+
+    <div class="menu-section-label">Посилання</div>
+
+    <div class="menu-item ext" id="mi-telegram">
+      <div class="menu-item-icon">✈️</div>
+      <div class="menu-item-info">
+        <div class="menu-item-title">Telegram-канал</div>
+        <div class="menu-item-desc">@kontur_ua — сповіщення</div>
+      </div>
+      <span class="menu-item-arrow">↗</span>
+    </div>
+
+    <div class="menu-item ext" id="mi-support">
+      <div class="menu-item-icon">❤️</div>
+      <div class="menu-item-info">
+        <div class="menu-item-title">Підтримати проєкт</div>
+        <div class="menu-item-desc">Monobank jar</div>
+      </div>
+      <span class="menu-item-arrow">↗</span>
+    </div>
+
+    <div class="menu-item ext" id="mi-github">
+      <div class="menu-item-icon">💻</div>
+      <div class="menu-item-info">
+        <div class="menu-item-title">GitHub</div>
+        <div class="menu-item-desc">Відкритий код</div>
+      </div>
+      <span class="menu-item-arrow">↗</span>
+    </div>
+
+    <div class="menu-item ext" id="mi-mail">
+      <div class="menu-item-icon">✉️</div>
+      <div class="menu-item-info">
+        <div class="menu-item-title">Зв'язатись</div>
+        <div class="menu-item-desc">info@kontur.dev</div>
+      </div>
+      <span class="menu-item-arrow">↗</span>
+    </div>
+  </div>
+
+  <div id="menu-footer">
+    <span id="menu-footer-left">© 2026 KONTUR.DEV</span>
+    <span id="menu-footer-right" id="menu-uptime">v2.1.0</span>
+  </div>
+</div>
+
+<!-- ═══ SOURCES SCREEN ═══ -->
+<div class="f-screen" id="screen-sources">
+  <div class="f-screen-header">
+    <div class="f-back" onclick="closeScreen('sources')">← Назад</div>
+    <div class="f-title">Джерела</div>
+  </div>
+  <div class="f-body">
+    <div class="src-section-lbl">Офіційні</div>
+    <div class="src-row">
+      <div class="src-avatar">🛡️</div>
+      <div class="src-info">
+        <div class="src-name">Повітряні Сили ЗСУ</div>
+        <div class="src-handle">@kpszsu</div>
+      </div>
+      <span class="src-badge primary">ПРІОРИТЕТ</span>
+    </div>
+    <div class="src-row">
+      <div class="src-avatar">🚨</div>
+      <div class="src-info">
+        <div class="src-name">Тривога Україна</div>
+        <div class="src-handle">@air_alert_ua</div>
+      </div>
+      <span class="src-badge primary">ПРІОРИТЕТ</span>
+    </div>
+
+    <div class="src-section-lbl">Моніторинг</div>
+    <div class="src-row">
+      <div class="src-avatar">📻</div>
+      <div class="src-info">
+        <div class="src-name">єРадар</div>
+        <div class="src-handle">@eradar_ua</div>
+      </div>
+      <button class="src-support-btn" onclick="showToast('💛 Дякуємо за підтримку!')">Підтримати</button>
+    </div>
+    <div class="src-row">
+      <div class="src-avatar">🔔</div>
+      <div class="src-info">
+        <div class="src-name">Ринда моніторить</div>
+        <div class="src-handle">@ryinda_monitors</div>
+      </div>
+      <button class="src-support-btn" onclick="showToast('💛 Дякуємо за підтримку!')">Підтримати</button>
+    </div>
+    <div class="src-row">
+      <div class="src-avatar">🏙️</div>
+      <div class="src-info">
+        <div class="src-name">monitor 1654 | Харків</div>
+        <div class="src-handle">@monitor1654</div>
+      </div>
+      <button class="src-support-btn" onclick="showToast('💛 Дякуємо за підтримку!')">Підтримати</button>
+    </div>
+    <div class="src-row">
+      <div class="src-avatar">🚀</div>
+      <div class="src-info">
+        <div class="src-name">ППО радар</div>
+        <div class="src-handle">@ppo_radar</div>
+      </div>
+      <button class="src-support-btn" onclick="showToast('💛 Дякуємо за підтримку!')">Підтримати</button>
+    </div>
+    <div class="src-row">
+      <div class="src-avatar">📡</div>
+      <div class="src-info">
+        <div class="src-name">Радар ракет</div>
+        <div class="src-handle">@radarua</div>
+      </div>
+      <button class="src-support-btn" onclick="showToast('💛 Дякуємо за підтримку!')">Підтримати</button>
+    </div>
+    <div class="src-row">
+      <div class="src-avatar">🇺🇦</div>
+      <div class="src-info">
+        <div class="src-name">Ukraine NOW</div>
+        <div class="src-handle">@ukrainenow</div>
+      </div>
+      <button class="src-support-btn" onclick="showToast('💛 Дякуємо за підтримку!')">Підтримати</button>
+    </div>
+    <div style="height:40px"></div>
+  </div>
+</div>
+
+<!-- ═══ FAQ SCREEN ═══ -->
+<div class="f-screen" id="screen-faq">
+  <div class="f-screen-header">
+    <div class="f-back" onclick="closeScreen('faq')">← Назад</div>
+    <div class="f-title">Питання / Відповіді</div>
+  </div>
+  <div class="f-body">
+    <div class="faq-item">
+      <div class="faq-q"><span class="faq-q-text">Звідки беруться дані?</span><span class="faq-chev">˅</span></div>
+      <div class="faq-a">Дані збираються автоматично з відкритих Telegram-каналів. Кожні 3 хвилини GitHub Actions запускає парсер, який обробляє нові повідомлення та класифікує загрози за допомогою AI-моделі.</div>
+    </div>
+    <div class="faq-item">
+      <div class="faq-q"><span class="faq-q-text">Що означають кольори на карті?</span><span class="faq-chev">˅</span></div>
+      <div class="faq-a">Темно-червоний регіон — активна загроза. Інтенсивність кольору = рівень загрози: medium → high → critical. Зелений — відбій тривоги (протягом 30 хв). Нейтральний — загроз не виявлено.</div>
+    </div>
+    <div class="faq-item">
+      <div class="faq-q"><span class="faq-q-text">Що таке AI confidence?</span><span class="faq-chev">˅</span></div>
+      <div class="faq-a">Рівень впевненості AI при класифікації повідомлення: ✓✓ висока впевненість, ✓ середня, ~ низька. Завжди перевіряйте інформацію в офіційних джерелах, особливо при ~ рівні.</div>
+    </div>
+    <div class="faq-item">
+      <div class="faq-q"><span class="faq-q-text">Як часто оновлюються дані?</span><span class="faq-chev">˅</span></div>
+      <div class="faq-a">Парсер збирає дані кожні 3 хвилини. Застосунок перевіряє нові дані кожні 30 секунд без перезавантаження сторінки.</div>
+    </div>
+    <div class="faq-item">
+      <div class="faq-q"><span class="faq-q-text">Чому регіон залишається червоним після відбою?</span><span class="faq-chev">˅</span></div>
+      <div class="faq-a">Регіон вважається «під загрозою» протягом 60 хвилин після останнього фіксування загрози. Після отримання сигналу відбою — відображається зеленим ще 30 хвилин.</div>
+    </div>
+    <div class="faq-item">
+      <div class="faq-q"><span class="faq-q-text">Чи можна довіряти КОНТУР як офіційному джерелу?</span><span class="faq-chev">˅</span></div>
+      <div class="faq-a">Ні. КОНТУР — інформаційний агрегатор і не є офіційним джерелом. У разі повітряної тривоги керуйтеся сигналами офіційних каналів та негайно прямуйте до укриття.</div>
+    </div>
+    <div style="height:40px"></div>
+  </div>
+</div>
+
+<!-- ═══ SETTINGS SCREEN ═══ -->
+<div class="f-screen" id="screen-settings">
+  <div class="f-screen-header">
+    <div class="f-back" onclick="closeScreen('settings')">← Назад</div>
+    <div class="f-title">Налаштування</div>
+  </div>
+  <div class="f-body">
+    <div class="setting-group">
+      <div class="setting-section-lbl">Карта</div>
+      <div class="setting-row">
+        <div class="setting-left">
+          <div class="setting-name">Маркери загроз</div>
+          <div class="setting-desc">Показувати іконки ▲ ✦ ◆ на карті</div>
+        </div>
+        <div class="toggle on" id="tog-markers" onclick="toggleSetting('markers',this)"><div class="toggle-knob"></div></div>
+      </div>
+      <div class="setting-row">
+        <div class="setting-left">
+          <div class="setting-name">Підсвітка регіонів</div>
+          <div class="setting-desc">Кольорове заповнення областей</div>
+        </div>
+        <div class="toggle on" id="tog-regions" onclick="toggleSetting('regions',this)"><div class="toggle-knob"></div></div>
+      </div>
+      <div class="setting-row">
+        <div class="setting-left">
+          <div class="setting-name">Мітки міст</div>
+          <div class="setting-desc">Назви міст на карті</div>
+        </div>
+        <div class="toggle on" id="tog-labels" onclick="toggleSetting('labels',this)"><div class="toggle-knob"></div></div>
+      </div>
+    </div>
+    <div class="setting-group">
+      <div class="setting-section-lbl">Дані</div>
+      <div class="setting-row">
+        <div class="setting-left">
+          <div class="setting-name">Автооновлення</div>
+          <div class="setting-desc">Перевірка нових даних кожні 30 сек</div>
+        </div>
+        <div class="toggle on" id="tog-auto" onclick="toggleSetting('auto',this)"><div class="toggle-knob"></div></div>
+      </div>
+      <div class="setting-row">
+        <div class="setting-left">
+          <div class="setting-name">Push-сповіщення</div>
+          <div class="setting-desc">Сповіщення браузера про нові загрози</div>
+        </div>
+        <div class="toggle" id="tog-notif" onclick="toggleSetting('notif',this)"><div class="toggle-knob"></div></div>
+      </div>
+    </div>
+    <div class="setting-group">
+      <div class="setting-section-lbl">Додатково</div>
+      <div class="setting-row">
+        <div class="setting-left">
+          <div class="setting-name">Версія даних</div>
+          <div class="setting-desc" id="data-version-label">— / —</div>
+        </div>
+        <button class="setting-btn" onclick="forceRefresh()">Оновити</button>
+      </div>
+      <div class="setting-row">
+        <div class="setting-left">
+          <div class="setting-name">Демо-режим</div>
+          <div class="setting-desc">Показати тестові дані (без бекенду)</div>
+        </div>
+        <button class="setting-btn" onclick="loadDemoData()">Завантажити</button>
+      </div>
+      <div class="setting-row">
+        <div class="setting-left">
+          <div class="setting-name">Очистити кеш</div>
+          <div class="setting-desc">Скинути збережені дані</div>
+        </div>
+        <button class="setting-btn danger" onclick="clearData()">Очистити</button>
+      </div>
+    </div>
+    <div style="height:40px"></div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div id="toast"></div>
+
+<!-- ═══════════════════════════════════════════
+     JAVASCRIPT
+═══════════════════════════════════════════ -->
+<script>
+'use strict';
+
+// ══════════════════════════════════════════════
+// CONFIG & STATE
+// ══════════════════════════════════════════════
+const CFG = {
+  dataUrl:   './data/alerts.json',
+  statsUrl:  './data/stats.json',
+  refreshMs: 30_000,
+  center:    [49.0, 31.5],
+  zoom:      6,
+};
+
+const ST = {
+  alerts:    [],
+  stats:     {},
+  tab:       'active',
+  sheet:     false,
+  radar:     false,
+  radarAF:   null,
+  lastFetch: null,
+  touchY:    0,
+  settings: {
+    markers: true, regions: true, labels: true,
+    auto: true, notif: false,
+  },
+};
+
+// ══════════════════════════════════════════════
+// OBLAST DATA — real geographic centers (lat/lng)
+// ══════════════════════════════════════════════
+const OBLASTS = {
+  'Вінницька':          { lat:49.233, lng:28.470 },
+  'Волинська':          { lat:50.747, lng:25.325 },
+  'Дніпропетровська':   { lat:48.464, lng:35.046 },
+  'Донецька':           { lat:48.015, lng:37.802 },
+  'Житомирська':        { lat:50.255, lng:28.658 },
+  'Закарпатська':       { lat:48.621, lng:22.288 },
+  'Запорізька':         { lat:47.838, lng:35.165 },
+  'Івано-Франківська':  { lat:48.928, lng:24.711 },
+  'Київська':           { lat:50.516, lng:30.973 },
+  'Київ':               { lat:50.450, lng:30.523 },
+  'Кіровоградська':     { lat:48.513, lng:32.262 },
+  'Луганська':          { lat:48.574, lng:39.307 },
+  'Львівська':          { lat:49.840, lng:23.990 },
+  'Миколаївська':       { lat:47.058, lng:31.992 },
+  'Одеська':            { lat:46.975, lng:31.170 },
+  'Полтавська':         { lat:49.588, lng:34.551 },
+  'Рівненська':         { lat:50.620, lng:26.251 },
+  'Сумська':            { lat:50.907, lng:34.798 },
+  'Тернопільська':      { lat:49.553, lng:25.594 },
+  'Харківська':         { lat:49.988, lng:36.233 },
+  'Херсонська':         { lat:46.636, lng:32.617 },
+  'Хмельницька':        { lat:49.420, lng:26.997 },
+  'Черкаська':          { lat:49.444, lng:31.997 },
+  'Чернівецька':        { lat:48.291, lng:25.935 },
+  'Чернігівська':       { lat:51.498, lng:31.290 },
+};
+
+const ICONS = {
+  shahed:'▲', rocket:'✦', ballistic:'◆', all_clear:'✓', unknown:'▲'
+};
+const SEV_ORDER = { critical:4, high:3, medium:2, low:1 };
+
+// Oblast polygon colors
+const SEV_STYLE = {
+  critical: { fill:'#8b1a1a', fillOp:.72, stroke:'#cc2525', sw:1.4 },
+  high:     { fill:'#6b1010', fillOp:.60, stroke:'#a02020', sw:1.0 },
+  medium:   { fill:'#461010', fillOp:.50, stroke:'#6a1818', sw:.8  },
+  low:      { fill:'#2a0a0a', fillOp:.40, stroke:'#421010', sw:.6  },
+  clear:    { fill:'#0a2a12', fillOp:.45, stroke:'#1a5025', sw:.8  },
+  neutral:  { fill:'#09090f', fillOp:.55, stroke:'#14141f', sw:.5  },
+};
+
+// ══════════════════════════════════════════════
+// DEMO DATA
+// ══════════════════════════════════════════════
+function demoAlerts() {
+  const now = () => Math.floor(Date.now()/1000);
+  const t = (s) => now() - s;
+  const ts2s = (ts) => new Date(ts*1000).toLocaleTimeString('uk-UA',{hour:'2-digit',minute:'2-digit',hour12:false});
+  const mk = (o) => ({ date_str: ts2s(o.ts), ...o });
+  return [
+    mk({ id:'d1', ts:t(380),  threat_type:'shahed',    all_clear:false, severity:'critical', count:18, destroyed:4, direction:'Із Бєлгородської обл.', regions:['Харківська','Сумська'], summary_ua:'🚨 Масова атака БПЛА Shahed із ПнС напрямку', detail_ua:'Зафіксовано групу з 18 БПЛА Shahed-136, що рухаються з Бєлгородської обл. по Харківщині та Сумщині. Задіяно всі бригади ППО. Оголошено повітряну тривогу.', text:'Маємо масовий рух дронів по Харківщині. ППО підняли. Shahed рухаються в двох хвилях.', ai_confidence:'high', tags:['shahed','масовий','пво'], channel:'kpszsu' }),
+    mk({ id:'d2', ts:t(840),  threat_type:'rocket',    all_clear:false, severity:'high',     count:2,  destroyed:0, direction:'Із Чорного моря', regions:['Дніпропетровська'], summary_ua:'⚡ Пуски крилатих ракет — напрямок Дніпропетровщина', detail_ua:'Зафіксовано 2 пуски крилатих ракет «Калібр» з акваторії Чорного моря. Напрямок відповідає Дніпропетровській обл.', text:'Ракети виявлено над морем, напрямок — Дніпро.', ai_confidence:'high', tags:['ракета','калібр','море'], channel:'eradar_ua' }),
+    mk({ id:'d3', ts:t(1420), threat_type:'shahed',    all_clear:false, severity:'medium',   count:7,  destroyed:5, direction:'Із Брянської обл.', regions:['Київська','Київ'], summary_ua:'🔶 БПЛА рухаються в напрямку столиці', detail_ua:'7 дронів зафіксовано на підльоті до столиці. 5 перехоплено засобами ППО. Залишкова загроза. Тривога активна.', text:'Рух БПЛА підтверджено. Перехоплення продовжується.', ai_confidence:'medium', tags:['бпла','перехоплення','київ'], channel:'monitor1654' }),
+    mk({ id:'d4', ts:t(2100), threat_type:'ballistic', all_clear:false, severity:'critical', count:1,  destroyed:0, direction:'З ТОТУ', regions:['Запорізька'], summary_ua:'🔴 Балістична ракета — Запорізька обл.', detail_ua:'Пуск балістичної ракети зафіксовано з тимчасово окупованої території. Час польоту ~4 хв. ППО в стані бойової готовності.', text:'Балістична. Запоріжжя. Час польоту ~4хв.', ai_confidence:'high', tags:['балістична','критично'], channel:'radarua' }),
+    mk({ id:'d5', ts:t(2900), threat_type:'rocket',    all_clear:false, severity:'high',     count:1,  destroyed:0, direction:'Із Росії', regions:['Чернігівська'], summary_ua:'⚡ Ракетна загроза — Чернігівщина', detail_ua:'Пуск крилатої ракети з Росії. Рух у напрямку Чернігівської обл.', text:'Ракетна загроза. Чернігів.', ai_confidence:'medium', tags:['ракета'], channel:'kpszsu' }),
+    mk({ id:'d6', ts:t(3800), threat_type:'shahed',    all_clear:false, severity:'medium',   count:9,  destroyed:6, direction:'Із моря', regions:['Одеська','Миколаївська'], summary_ua:'🟡 Хвиля БПЛА — Південь', detail_ua:'9 дронів Shahed зафіксовано над Чорним морем. 6 перехоплено морськими та наземними засобами ППО. 3 продовжують рух.', text:'Атака дронів. Південь. Перехоплюємо.', ai_confidence:'medium', tags:['бпла','південь'], channel:'eradar_ua' }),
+    mk({ id:'d7', ts:t(5400), threat_type:'all_clear', all_clear:true, severity:'low', regions:['Полтавська'], summary_ua:'✅ Відбій — Полтавська обл.', detail_ua:'Загроза БПЛА минула. Повітряна тривога скасована для Полтавської обл.', text:'Відбій. Тривога скасована.', ai_confidence:'high', tags:['відбій'], channel:'ppo_radar' }),
+    mk({ id:'d8', ts:t(7200), threat_type:'shahed',    all_clear:false, severity:'low', count:3, destroyed:3, direction:'Із Криму', regions:['Херсонська'], summary_ua:'🟡 3 БПЛА перехоплено — Херсонщина', detail_ua:'3 дрони Shahed перехоплено силами ППО над Херсонщиною. Активних загроз не залишилось.', text:'3 бпла збито над Херсонщиною.', ai_confidence:'high', tags:['шахед','перехоплення'], channel:'ppo_radar' }),
+  ];
+}
+
+function demoStats(alerts) {
+  const active = alerts.filter(a => !a.all_clear && Date.now()/1000 - a.ts < 3600);
+  const tc = {shahed:0,rocket:0,ballistic:0}, sc = {critical:0,high:0,medium:0,low:0};
+  active.forEach(a => { if(a.threat_type in tc) tc[a.threat_type]++; if(a.severity in sc) sc[a.severity]++; });
+  return { threat_counts:tc, severity_counts:sc, active_last_hour:active.length,
+    regions_under_threat:[...new Set(active.flatMap(a=>a.regions||[]))] };
+}
+
+// ══════════════════════════════════════════════
+// MAP SETUP
+// ══════════════════════════════════════════════
+let map, oblastGeoLayer, markersGroup;
+let obLayerMap = {};   // name → leaflet layer ref
+let labelTile;
+
+function initMap() {
+  map = L.map('map', {
+    center: CFG.center, zoom: CFG.zoom,
+    zoomControl: true, attributionControl: false,
+    minZoom: 5, maxZoom: 13,
+  });
+
+  // Dark CartoDB — no labels
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', {
+    subdomains:'abcd', maxZoom:19, zIndex:1,
+  }).addTo(map);
+
+  // Labels layer (toggle-able)
+  labelTile = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png', {
+    subdomains:'abcd', maxZoom:19, zIndex:3, opacity:.5,
+  }).addTo(map);
+
+  oblastGeoLayer = L.layerGroup().addTo(map);
+  markersGroup   = L.layerGroup().addTo(map);
+
+  // Load Ukraine GeoJSON oblasts
+  loadOblastGeo();
+}
+
+function loadOblastGeo() {
+  // Try multiple CDN sources
+  const urls = [
+    'https://raw.githubusercontent.com/EugeniyGA/ukraine-map/master/ukraine.json',
+    'https://raw.githubusercontent.com/georgd/geojs/master/data/ukraine.json',
+  ];
+  tryLoadGeo(urls, 0);
+}
+
+function tryLoadGeo(urls, idx) {
+  if (idx >= urls.length) {
+    console.warn('All GeoJSON sources failed — using fallback dots');
+    renderFallbackDots();
+    return;
+  }
+  fetch(urls[idx])
+    .then(r => { if(!r.ok) throw new Error(); return r.json(); })
+    .then(data => applyOblastGeo(data))
+    .catch(() => tryLoadGeo(urls, idx+1));
+}
+
+function applyOblastGeo(data) {
+  oblastGeoLayer.clearLayers();
+  obLayerMap = {};
+
+  L.geoJSON(data, {
+    style: feat => oblastStyle(normName(feat.properties?.name || feat.properties?.NAME_1 || '')),
+    onEachFeature: (feat, layer) => {
+      const name = normName(feat.properties?.name || feat.properties?.NAME_1 || '');
+      obLayerMap[name] = layer;
+      layer.on({
+        click: () => showOblastPopup(name, layer),
+        mouseover: e => {
+          if (!document.getElementById('map').classList.contains('no-hover'))
+            e.target.setStyle({ fillOpacity: Math.min((oblastStyle(name).fillOpacity||.5)+.12, .9) });
+        },
+        mouseout: e => e.target.setStyle(oblastStyle(name)),
+      });
+    }
+  }).addTo(oblastGeoLayer);
+}
+
+function renderFallbackDots() {
+  oblastGeoLayer.clearLayers();
+  obLayerMap = {};
+  Object.entries(OBLASTS).forEach(([name, c]) => {
+    const s = oblastStyle(name);
+    const l = L.circle([c.lat, c.lng], {
+      radius:30000, fillColor:s.fillColor, fillOpacity:s.fillOpacity,
+      color:s.color, weight:s.weight,
+    }).addTo(oblastGeoLayer);
+    l.on('click', () => showOblastPopup(name, l));
+    obLayerMap[name] = l;
+  });
+}
+
+function oblastStyle(name) {
+  const active  = getActiveAlerts().filter(a => (a.regions||[]).includes(name));
+  const cleared = ST.alerts.filter(a => a.all_clear && Date.now()/1000-a.ts<1800 && (a.regions||[]).includes(name));
+
+  if (!ST.settings.regions) {
+    return { fillColor:'#09090f', fillOpacity:.5, color:'#141420', weight:.5 };
+  }
+
+  let maxSev = null;
+  active.forEach(a => {
+    if (!maxSev || (SEV_ORDER[a.severity]||0) > (SEV_ORDER[maxSev]||0)) maxSev = a.severity;
+  });
+  if (maxSev) {
+    const s = SEV_STYLE[maxSev];
+    return { fillColor:s.fill, fillOpacity:s.fillOp, color:s.stroke, weight:s.sw };
+  }
+  if (cleared.length && !active.length) {
+    const s = SEV_STYLE.clear;
+    return { fillColor:s.fill, fillOpacity:s.fillOp, color:s.stroke, weight:s.sw };
+  }
+  const s = SEV_STYLE.neutral;
+  return { fillColor:s.fill, fillOpacity:s.fillOp, color:s.stroke, weight:s.sw };
+}
+
+function refreshMapStyles() {
+  Object.entries(obLayerMap).forEach(([name, layer]) => {
+    layer.setStyle(oblastStyle(name));
+  });
+  renderMarkers();
+}
+
+function renderMarkers() {
+  markersGroup.clearLayers();
+  if (!ST.settings.markers) return;
+
+  const seen = new Set();
+  getActiveAlerts().forEach(alert => {
+    const reg = alert.regions?.[0];
+    if (!reg || seen.has(reg)) return;
+    seen.add(reg);
+    const c = OBLASTS[reg];
+    if (!c) return;
+
+    const isCrit = alert.severity === 'critical';
+    const sz     = isCrit ? 30 : 24;
+    const icon   = ICONS[alert.threat_type] || '▲';
+    const cls    = alert.threat_type || 'unknown';
+
+    const divIcon = L.divIcon({
+      html: `<div class="t-pin ${cls}" style="width:${sz}px;height:${sz}px;font-size:${isCrit?13:10}px">${icon}</div>`,
+      className: '', iconSize:[sz,sz], iconAnchor:[sz/2, sz/2],
+    });
+
+    L.marker([c.lat, c.lng], { icon: divIcon })
+      .on('click', () => {
+        openSheet(); switchTab('active');
+        setTimeout(() => scrollToAlert(alert.id), 420);
+        map.closePopup();
+      })
+      .addTo(markersGroup);
+  });
+}
+
+// Oblast popup
+function showOblastPopup(name, layer) {
+  const active  = getActiveAlerts().filter(a => (a.regions||[]).includes(name));
+  const cleared = ST.alerts.filter(a => a.all_clear && Date.now()/1000-a.ts<1800 && (a.regions||[]).includes(name));
+  const coords  = OBLASTS[name] || { lat: layer.getBounds?.()?.getCenter?.()?.lat || 49, lng: 31 };
+
+  const statusCls  = active.length ? 'threat' : (cleared.length ? 'clear' : 'neutral');
+  const statusText = active.length ? `⚠ ${active.length} загроз` : (cleared.length ? '✓ Відбій' : '— Немає загроз');
+
+  const alertsHtml = active.slice(0,3).map(a => `
+    <div class="ob-popup-alert">
+      <span class="ob-popup-alert-icon" style="color:${a.threat_type==='ballistic'?'var(--red)':a.threat_type==='rocket'?'var(--orange)':'var(--gold)'}">${ICONS[a.threat_type]||'▲'}</span>
+      <span>${(a.summary_ua||a.threat_type||'').replace(/^[🚨⚡🔶🟡🔴✅]/,'').trim().slice(0,60)}</span>
+    </div>`).join('');
+
+  const btnHtml = active.length
+    ? `<div class="ob-popup-footer">
+        <button class="ob-popup-btn primary" onclick="goToAlerts('${active[0].id}')">Переглянути деталі</button>
+        <button class="ob-popup-btn secondary" onclick="map.closePopup()">Закрити</button>
+       </div>`
+    : `<div class="ob-popup-footer">
+        <button class="ob-popup-btn secondary" style="flex:1" onclick="map.closePopup()">Закрити</button>
+       </div>`;
+
+  const html = `<div class="ob-popup">
+    <div class="ob-popup-header">
+      <span class="ob-popup-flag">🇺🇦</span>
+      <span class="ob-popup-name">${name}</span>
+      <span class="ob-popup-status-pill ${statusCls}">${statusText}</span>
+    </div>
+    <div class="ob-popup-body">
+      ${alertsHtml || `<div class="ob-popup-empty">загроз не виявлено</div>`}
+    </div>
+    ${btnHtml}
+  </div>`;
+
+  L.popup({ maxWidth:260, closeButton:true })
+    .setLatLng([coords.lat, coords.lng])
+    .setContent(html)
+    .openOn(map);
+}
+
+function goToAlerts(id) {
+  map.closePopup();
+  openSheet(); switchTab('active');
+  setTimeout(() => scrollToAlert(id), 440);
+}
+
+// ══════════════════════════════════════════════
+// NAME NORMALIZATION
+// ══════════════════════════════════════════════
+const NAME_MAP = {
+  "Vinnyts'ka":'Вінницька', 'Vinnytsia':'Вінницька', 'Vinnitsa':'Вінницька',
+  "Volyn'":'Волинська', 'Volyn':'Волинська', 'Volynska':'Волинська',
+  "Dnipropetrovs'k":'Дніпропетровська', 'Dnipropetrovsk':'Дніпропетровська', 'Dnipro':'Дніпропетровська',
+  "Donets'k":'Донецька', 'Donetsk':'Донецька',
+  'Zhytomyr':'Житомирська', "Zhytomyrs'ka":'Житомирська',
+  'Zakarpattia':'Закарпатська','Transcarpathia':'Закарпатська',"Zakarpats'ka":'Закарпатська',
+  'Zaporizhzhia':'Запорізька','Zaporizhia':'Запорізька',"Zaporiz'ka":'Запорізька',
+  "Ivano-Frankivs'k":'Івано-Франківська','Ivano-Frankivsk':'Івано-Франківська',
+  'Kyiv':'Київська','Kyivska':'Київська','Kyiv City':'Київ',
+  'Kirovograd':'Кіровоградська','Kirovohrad':'Кіровоградська',"Kirovohrads'ka":'Кіровоградська',
+  "Luhans'k":'Луганська','Luhansk':'Луганська',
+  "L'viv":'Львівська','Lviv':'Львівська',
+  'Mykolayiv':'Миколаївська','Mykolaiv':'Миколаївська',
+  'Odessa':'Одеська','Odesa':'Одеська',
+  'Poltava':'Полтавська','Poltavska':'Полтавська',
+  'Rivne':'Рівненська',"Rivnens'ka":'Рівненська',
+  'Sumy':'Сумська',"Sums'ka":'Сумська',
+  "Ternopil'":'Тернопільська','Ternopil':'Тернопільська',
+  'Kharkiv':'Харківська',"Kharkivs'ka":'Харківська',
+  'Kherson':'Херсонська',"Khersons'ka":'Херсонська',
+  "Khmel'nyts'kyy":'Хмельницька','Khmelnytskyi':'Хмельницька',
+  'Cherkasy':'Черкаська',"Cherkasy Oblast":'Черкаська',
+  'Chernivtsi':'Чернівецька',"Chernivets'ka":'Чернівецька',
+  'Chernihiv':'Чернігівська',"Chernihivs'ka":'Чернігівська',
+  'Crimea':'Кримська','Respublika Krym':'Кримська',
+};
+function normName(n) { return NAME_MAP[n] || n; }
+
+// ══════════════════════════════════════════════
+// DATA FETCH
+// ══════════════════════════════════════════════
+async function fetchData() {
+  if (!ST.settings.auto) return;
+  try {
+    const [ar, sr] = await Promise.all([
+      fetch(CFG.dataUrl  + '?_=' + Date.now()),
+      fetch(CFG.statsUrl + '?_=' + Date.now()),
+    ]);
+    if (!ar.ok || !sr.ok) throw new Error('HTTP error');
+    ST.alerts = (await ar.json()).alerts || [];
+    ST.stats  = await sr.json();
+    ST.lastFetch = new Date();
+    updateDataVersionLabel();
+    renderAll();
+  } catch {
+    if (ST.alerts.length === 0 && document.querySelector('#tog-auto.on')) {
+      ST.alerts    = demoAlerts();
+      ST.stats     = demoStats(ST.alerts);
+      ST.lastFetch = new Date();
+      renderAll();
+    }
+  }
+}
+
+function loadDemoData() {
+  ST.alerts    = demoAlerts();
+  ST.stats     = demoStats(ST.alerts);
+  ST.lastFetch = new Date();
+  renderAll();
+  showToast('✓ Демо-дані завантажено');
+  closeScreen('settings');
+}
+
+function forceRefresh() {
+  showToast('🔄 Оновлення даних…');
+  fetchData();
+}
+
+function clearData() {
+  ST.alerts = []; ST.stats = {};
+  renderAll();
+  showToast('✓ Дані очищено');
+}
+
+function updateDataVersionLabel() {
+  const el = document.getElementById('data-version-label');
+  if (el && ST.lastFetch) {
+    el.textContent = `Оновлено: ${ST.lastFetch.toLocaleTimeString('uk-UA',{hour12:false})}`;
+  }
+}
+
+// ══════════════════════════════════════════════
+// QUERIES
+// ══════════════════════════════════════════════
+function getActiveAlerts() {
+  return ST.alerts.filter(a => !a.all_clear && Date.now()/1000 - a.ts < 3600);
+}
+function getPastAlerts() {
+  return ST.alerts.filter(a => a.all_clear || Date.now()/1000 - a.ts >= 3600);
+}
+
+// ══════════════════════════════════════════════
+// RENDER ALL
+// ══════════════════════════════════════════════
+function renderAll() {
+  renderTopBar();
+  refreshMapStyles();
+  renderSheet();
+  renderMenuStats();
+}
+
+function renderTopBar() {
+  const active = getActiveAlerts();
+  const isCrit = (ST.stats.severity_counts?.critical||0) > 0;
+  const tc     = ST.stats.threat_counts || {};
+  const total  = active.length;
+
+  const badge = document.getElementById('status-badge');
+  const dot   = document.getElementById('badge-dot');
+  const text  = document.getElementById('badge-text');
+  const cnt   = document.getElementById('badge-count');
+
+  badge.classList.toggle('alert-mode', isCrit);
+  const bpla = tc.shahed || 0;
+  text.textContent = bpla > 0 ? `▲ ${bpla} БПЛА` : total > 0 ? `⚠ ${total} ЗАГРОЗИ` : 'МОНІТОРИНГ АКТИВНИЙ';
+  cnt.textContent = total;
+  cnt.classList.toggle('show', total > 0);
+
+  // Peek
+  const pk  = document.getElementById('peek-count');
+  pk.textContent = total;
+  pk.classList.toggle('safe', total === 0);
+  document.getElementById('peek-icon').style.color = isCrit ? 'var(--red)' : 'var(--gold)';
+  document.getElementById('peek-icon').textContent = isCrit ? '◆' : '▲';
+  document.getElementById('peek-label').textContent =
+    total > 0 ? `${total} активних загроз` : 'Активних загроз немає';
+}
+
+function renderMenuStats() {
+  const tc = ST.stats.threat_counts || {};
+  const tot = getActiveAlerts().length;
+  qs('#ms-bpla').textContent     = tc.shahed    || 0;
+  qs('#ms-rockets').textContent  = tc.rocket    || 0;
+  qs('#ms-balistic').textContent = tc.ballistic || 0;
+  qs('#ms-total').textContent    = tot;
+}
+
+// ══════════════════════════════════════════════
+// SHEET / ALERTS
+// ══════════════════════════════════════════════
+function renderSheet() {
+  const list = qs('#alert-list');
+  if (ST.tab === 'active') {
+    const items = getActiveAlerts();
+    list.innerHTML = items.length
+      ? items.map(a => alertHtml(a)).join('')
+      : `<div class="empty"><div class="empty-icon">🛡️</div><div class="empty-text">Активних загроз не виявлено<br>— Слава Україні —</div></div>`;
+  } else if (ST.tab === 'past') {
+    const items = getPastAlerts().slice(0,60);
+    list.innerHTML = items.length
+      ? items.map(a => alertHtml(a, true)).join('')
+      : `<div class="empty"><div class="empty-icon">📋</div><div class="empty-text">Архів порожній</div></div>`;
+  } else {
+    renderStats(list);
+  }
+}
+
+function alertHtml(a, dim=false) {
+  const tc  = a.all_clear ? 'all-clear' : (a.threat_type||'unknown');
+  const ico = a.all_clear ? '✓' : (ICONS[a.threat_type]||'▲');
+  const reg = a.regions?.[0] || '—';
+  const ext = (a.regions?.length||1) - 1;
+  const sc  = a.all_clear ? 'all-clear' : (a.severity||'low');
+  const sub = (a.summary_ua||'').replace(/^[🚨⚡🔶🟡🔴✅]/,'').trim().slice(0,58);
+
+  return `<div class="a-row ${sc}${dim?' dim':''}" id="row-${a.id}" onclick="toggleDetail('${a.id}')">
+    <span class="a-time">${a.date_str||''}</span>
+    <span class="a-badge ${tc}">${ico}</span>
+    <div class="a-body">
+      <div class="a-region${a.all_clear?' ac':''}">${reg}${ext>0?` <small style="color:var(--t4)">+${ext}</small>`:''}</div>
+      ${sub?`<div class="a-sub">${sub}…</div>`:''}
+    </div>
+    <span class="a-chev">˅</span>
+  </div>
+  <div class="a-detail" id="det-${a.id}">
+    ${a.summary_ua?`<div class="d-title">${a.summary_ua}</div>`:''}
+    ${a.detail_ua ?`<div class="d-body">${a.detail_ua}</div>`:''}
+    ${a.text      ?`<div class="d-raw">${a.text.slice(0,400)}</div>`:''}
+    <div class="d-tags">
+      <span class="d-tag sev-${a.severity||'low'}">${{critical:'КРИТИЧНО',high:'ВИСОКА',medium:'СЕРЕДНЯ',low:'НИЗЬКА'}[a.severity]||'—'}</span>
+      ${a.count    ?`<span class="d-tag">🔢 ${a.count}</span>`:''}
+      ${a.destroyed?`<span class="d-tag">💥 ${a.destroyed} збито</span>`:''}
+      ${a.direction?`<span class="d-tag">📍 ${a.direction}</span>`:''}
+      <span class="d-tag ai-${{high:'h',medium:'m',low:'l'}[a.ai_confidence]||'l'}">${{high:'AI ✓✓',medium:'AI ✓',low:'AI ~'}[a.ai_confidence]||'AI ?'}</span>
+      ${a.channel?`<span class="d-tag channel">@${a.channel}</span>`:''}
+      ${(a.tags||[]).map(t=>`<span class="d-tag">${t}</span>`).join('')}
+    </div>
+    ${a.regions?.length?`<button class="d-map-btn" onclick="flyToRegion('${a.regions[0]}');closeSheet()">📍 Показати на карті — ${a.regions[0]}</button>`:''}
+  </div>`;
+}
+
+function renderStats(container) {
+  const tc = ST.stats.threat_counts||{};
+  const sc = ST.stats.severity_counts||{};
+  const mx = Math.max(...Object.values(sc), 1);
+  const regs = (ST.stats.regions_under_threat||[]).join('\n')||'—';
+
+  container.innerHTML = `<div class="stats-body">
+    <div class="stats-section-lbl">Активні загрози (60 хв)</div>
+    <div class="stats-grid">
+      ${sc2('БПЛА',tc.shahed||0,'var(--gold)')}
+      ${sc2('Ракети',tc.rocket||0,'var(--orange)')}
+      ${sc2('Балістичні',tc.ballistic||0,'var(--red)')}
+      ${sc2('Разом',ST.stats.active_last_hour||0,'var(--t2)')}
+    </div>
+    <div class="stats-section-lbl">Регіони під загрозою</div>
+    <div class="regions-list">${regs}</div>
+    <div class="stats-section-lbl">Рівень загроз</div>
+    ${sb('КРИТИЧНИЙ',sc.critical||0,mx,'var(--red)')}
+    ${sb('ВИСОКИЙ',sc.high||0,mx,'var(--orange)')}
+    ${sb('СЕРЕДНІЙ',sc.medium||0,mx,'var(--gold)')}
+    ${sb('НИЗЬКИЙ',sc.low||0,mx,'var(--t4)')}
+    ${ST.lastFetch?`<div style="font-family:var(--f-hud);font-size:9px;color:var(--t4);margin-top:14px;text-align:center;letter-spacing:2px">ОНОВЛЕНО: ${ST.lastFetch.toLocaleTimeString('uk-UA',{hour12:false})}</div>`:''}
+  </div>`;
+}
+function sc2(l,v,c){ return `<div class="stat-card"><div class="stat-num" style="color:${c}">${v}</div><div class="stat-lbl">${l}</div></div>`; }
+function sb(l,v,mx,c){ const p=Math.round(v/mx*100); return `<div class="sev-row"><span class="sev-name">${l}</span><div class="sev-track"><div class="sev-bar" style="width:${p}%;background:${c}"></div></div><span class="sev-n" style="color:${c}">${v}</span></div>`; }
+
+// ══════════════════════════════════════════════
+// SHEET INTERACTIONS
+// ══════════════════════════════════════════════
+function toggleDetail(id) {
+  const row = document.getElementById('row-'+id);
+  const det = document.getElementById('det-'+id);
+  if (!row||!det) return;
+  const open = !det.classList.contains('open');
+  qsa('.a-detail.open').forEach(d => {
+    d.classList.remove('open');
+    document.getElementById(d.id.replace('det-','row-'))?.classList.remove('expanded');
+  });
+  det.classList.toggle('open', open);
+  row.classList.toggle('expanded', open);
+  if (open) setTimeout(() => row.scrollIntoView({behavior:'smooth',block:'nearest'}), 60);
+}
+
+function scrollToAlert(id) {
+  const el = document.getElementById('row-'+id);
+  if (el) setTimeout(() => { el.scrollIntoView({behavior:'smooth',block:'center'}); }, 400);
+}
+
+function flyToRegion(name) {
+  const c = OBLASTS[name];
+  if (c) map.flyTo([c.lat, c.lng], 8, {animate:true, duration:.8});
+}
+
+function switchTab(tab) {
+  ST.tab = tab;
+  qsa('.s-tab').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
+  renderSheet();
+}
+
+// Sheet open/close
+function openSheet()  { ST.sheet=true;  qs('#sheet').classList.add('open'); }
+function closeSheet() { ST.sheet=false; qs('#sheet').classList.remove('open'); }
+function toggleSheet(){ ST.sheet ? closeSheet() : openSheet(); }
+
+// Touch drag on handle
+const sheetEl  = qs('#sheet');
+const handleEl = qs('#sheet-handle');
+handleEl.addEventListener('touchstart', e => { ST.touchY = e.touches[0].clientY; }, {passive:true});
+handleEl.addEventListener('touchmove',  e => {
+  const dy = e.touches[0].clientY - ST.touchY;
+  if (dy > 10 && ST.sheet) sheetEl.style.transform = `translateY(${dy}px)`;
+}, {passive:true});
+handleEl.addEventListener('touchend', e => {
+  sheetEl.style.transform = '';
+  const dy = e.changedTouches[0].clientY - ST.touchY;
+  if (dy > 70) closeSheet();
+  else if (dy < -40) openSheet();
+  else if (Math.abs(dy) < 12) toggleSheet();
+}, {passive:true});
+
+qs('#sheet-peek').onclick = toggleSheet;
+
+// Tab clicks
+qsa('.s-tab').forEach(b => b.onclick = () => { switchTab(b.dataset.tab); openSheet(); });
+
+// CTA support
+qs('#cta-support').onclick = openSupport;
+
+// ══════════════════════════════════════════════
+// MAP BUTTONS
+// ══════════════════════════════════════════════
+qs('#btn-locate').onclick = () => {
+  if (!navigator.geolocation) { showToast('Геолокація недоступна в цьому браузері'); return; }
+  showToast('🔍 Визначаємо локацію…');
+  navigator.geolocation.getCurrentPosition(pos => {
+    map.flyTo([pos.coords.latitude, pos.coords.longitude], 10, {animate:true});
+    L.circle([pos.coords.latitude, pos.coords.longitude], {
+      radius:1500, color:'var(--gold)', fillColor:'var(--gold)', fillOpacity:.2, weight:1.5,
+    }).addTo(map).bindPopup('<div style="font-family:var(--f-hud);font-size:11px;color:var(--t1);padding:6px">📍 Ваша локація</div>').openPopup();
+    showToast('📍 Знайдено вашу локацію');
+  }, () => showToast('⚠ Не вдалося визначити локацію'));
+};
+
+qs('#btn-markers').onclick = function() {
+  ST.settings.markers = !ST.settings.markers;
+  this.classList.toggle('toggled', ST.settings.markers);
+  qs('#tog-markers')?.classList.toggle('on', ST.settings.markers);
+  qs('#tog-markers')?.querySelector('.toggle-knob').style.transform = ST.settings.markers?'translateX(20px)':'';
+  refreshMapStyles();
+  showToast(ST.settings.markers ? '▲ Маркери увімкнено' : '▲ Маркери вимкнено');
+};
+
+qs('#btn-regions').onclick = function() {
+  ST.settings.regions = !ST.settings.regions;
+  this.classList.toggle('toggled', ST.settings.regions);
+  qs('#tog-regions')?.classList.toggle('on', ST.settings.regions);
+  refreshMapStyles();
+  showToast(ST.settings.regions ? '🗺 Підсвітку увімкнено' : '🗺 Підсвітку вимкнено');
+};
+
+qs('#btn-home').onclick = () => {
+  map.flyTo(CFG.center, CFG.zoom, {animate:true, duration:.8});
+};
+
+// ══════════════════════════════════════════════
+// MENU
+// ══════════════════════════════════════════════
+function openMenu()  {
+  qs('#menu-backdrop').classList.add('open');
+  qs('#menu-panel').classList.add('open');
+}
+function closeMenu() {
+  qs('#menu-backdrop').classList.remove('open');
+  qs('#menu-panel').classList.remove('open');
+}
+
+qs('#btn-menu').onclick        = openMenu;
+qs('#menu-close-btn').onclick  = closeMenu;
+qs('#menu-backdrop').onclick   = closeMenu;
+
+qs('#mi-sources').onclick  = () => { openScreen('sources'); closeMenu(); };
+qs('#mi-faq').onclick      = () => { openScreen('faq'); closeMenu(); };
+qs('#mi-settings').onclick = () => { openScreen('settings'); closeMenu(); };
+qs('#mi-radar').onclick    = () => { closeMenu(); openRadar(); };
+qs('#mi-telegram').onclick = () => { window.open('https://t.me/kontur_ua','_blank'); closeMenu(); };
+qs('#mi-support').onclick  = () => { openSupport(); closeMenu(); };
+qs('#mi-github').onclick   = () => { window.open('https://github.com/kontur-ua','_blank'); closeMenu(); };
+qs('#mi-mail').onclick     = () => { window.open('mailto:info@kontur.dev','_blank'); closeMenu(); };
+
+// ══════════════════════════════════════════════
+// FULL SCREENS
+// ══════════════════════════════════════════════
+function openScreen(name)  { qs(`#screen-${name}`)?.classList.add('open'); }
+function closeScreen(name) { qs(`#screen-${name}`)?.classList.remove('open'); }
+
+// FAQ accordion
+document.addEventListener('click', e => {
+  const q = e.target.closest('.faq-q');
+  if (!q) return;
+  const item = q.parentElement;
+  const wasOpen = item.classList.contains('open');
+  qsa('.faq-item.open').forEach(i => i.classList.remove('open'));
+  if (!wasOpen) item.classList.add('open');
+});
+
+// ══════════════════════════════════════════════
+// SETTINGS
+// ══════════════════════════════════════════════
+function toggleSetting(key, el) {
+  ST.settings[key] = !ST.settings[key];
+  el.classList.toggle('on', ST.settings[key]);
+
+  if (key === 'markers' || key === 'regions') refreshMapStyles();
+  if (key === 'labels') {
+    if (ST.settings.labels) labelTile?.addTo(map);
+    else map?.removeLayer(labelTile);
+  }
+  if (key === 'auto') showToast(ST.settings.auto ? '🔄 Автооновлення увімкнено' : '⏸ Автооновлення вимкнено');
+  if (key === 'notif' && ST.settings.notif) {
+    Notification?.requestPermission().then(p => {
+      if (p !== 'granted') {
+        ST.settings.notif = false;
+        el.classList.remove('on');
+        showToast('⚠ Сповіщення заблоковано браузером');
+      } else showToast('🔔 Сповіщення увімкнено');
+    });
+  }
+
+  // Sync map action buttons
+  qs('#btn-markers')?.classList.toggle('toggled', ST.settings.markers);
+  qs('#btn-regions')?.classList.toggle('toggled', ST.settings.regions);
+}
+
+// ══════════════════════════════════════════════
+// RADAR
+// ══════════════════════════════════════════════
+qs('#btn-radar').onclick  = () => ST.radar ? closeRadar() : openRadar();
+qs('#radar-close').onclick = closeRadar;
+
+function openRadar() {
+  ST.radar = true;
+  qs('#btn-radar').classList.add('active');
+  qs('#radar-screen').classList.add('open');
+  // Update radar stats
+  const tc = ST.stats.threat_counts || {};
+  qs('#r-bpla').textContent     = tc.shahed    || 0;
+  qs('#r-rockets').textContent  = tc.rocket    || 0;
+  qs('#r-balistic').textContent = tc.ballistic || 0;
+  startRadar();
+}
+function closeRadar() {
+  ST.radar = false;
+  qs('#btn-radar').classList.remove('active');
+  qs('#radar-screen').classList.remove('open');
+  stopRadar();
+}
+
+function startRadar() {
+  const cv  = qs('#radar-canvas');
+  const ctx = cv.getContext('2d');
+  const W=cv.width, H=cv.height, cx=W/2, cy=H/2, r=W*.45;
+  let angle = 0;
+
+  // Map active alerts to radar dots
+  const dots = getActiveAlerts().map(a => {
+    const c = OBLASTS[a.regions?.[0]];
+    if (!c) return null;
+    // Ukraine bb: lat 44-52, lng 22-40
+    const nx = (c.lng - 22) / (40-22);
+    const ny = 1 - (c.lat - 44) / (52-44);
+    return {
+      x: cx + (nx-.5)*r*1.85,
+      y: cy + (ny-.5)*r*1.1,
+      color: a.threat_type==='ballistic'?'#ff3d3d':a.threat_type==='rocket'?'#ff7b29':'#f5c518',
+      sz: a.severity==='critical' ? 6 : 4,
+    };
+  }).filter(Boolean);
+
+  function frame() {
+    ctx.clearRect(0,0,W,H);
+
+    // Background gradient
+    const bg = ctx.createRadialGradient(cx,cy,0,cx,cy,r);
+    bg.addColorStop(0,'#0a0c14');
+    bg.addColorStop(1,'#05060a');
+    ctx.fillStyle=bg; ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2); ctx.fill();
+
+    // Grid rings
+    [.25,.5,.75,1].forEach(f => {
+      ctx.beginPath(); ctx.arc(cx,cy,r*f,0,Math.PI*2);
+      ctx.strokeStyle = f===1 ? '#1a1b2a' : '#12121e';
+      ctx.lineWidth   = f===1 ? 1 : .6;
+      ctx.stroke();
+    });
+
+    // Cross & diagonal
+    ctx.strokeStyle='#0e0f1c'; ctx.lineWidth=.6;
+    [[cx-r,cy,cx+r,cy],[cx,cy-r,cx,cy+r]].forEach(([x1,y1,x2,y2])=>{
+      ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+    });
+    [45,135].forEach(d => {
+      const a=d*Math.PI/180;
+      ctx.beginPath();
+      ctx.moveTo(cx-Math.cos(a)*r, cy-Math.sin(a)*r);
+      ctx.lineTo(cx+Math.cos(a)*r, cy+Math.sin(a)*r);
+      ctx.stroke();
+    });
+
+    // Ukraine silhouette
+    ctx.beginPath(); ctx.ellipse(cx+6, cy+4, r*.5, r*.28, -.05, 0, Math.PI*2);
+    ctx.fillStyle='#0d0e18'; ctx.fill();
+    ctx.strokeStyle='#171825'; ctx.lineWidth=.8; ctx.stroke();
+
+    // Sweep fan
+    for (let i=100; i>=0; i--) {
+      const a = (angle - i) * Math.PI/180;
+      const alpha = ((100-i)/100) * .14;
+      ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,r,a,a+1.2*Math.PI/180); ctx.closePath();
+      ctx.fillStyle=`rgba(245,197,24,${alpha})`; ctx.fill();
+    }
+
+    // Sweep arm glow
+    const arm = angle * Math.PI/180;
+    const grd = ctx.createLinearGradient(cx,cy, cx+Math.cos(arm)*r, cy+Math.sin(arm)*r);
+    grd.addColorStop(0,'rgba(245,197,24,.8)');
+    grd.addColorStop(1,'rgba(245,197,24,.05)');
+    ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(cx+Math.cos(arm)*r,cy+Math.sin(arm)*r);
+    ctx.strokeStyle=grd; ctx.lineWidth=1.5; ctx.stroke();
+
+    // Threat dots + pings
+    dots.forEach(d => {
+      const ping = (Date.now()%2200)/2200;
+      // Ping ring
+      ctx.beginPath(); ctx.arc(d.x,d.y, d.sz + ping*20, 0, Math.PI*2);
+      ctx.strokeStyle = d.color.replace('rgb','rgba').replace(')',`,${(1-ping)*.3})`)||d.color+'50';
+      ctx.lineWidth = 1; ctx.stroke();
+      // Dot
+      const gd = ctx.createRadialGradient(d.x,d.y,0,d.x,d.y,d.sz*2);
+      gd.addColorStop(0,d.color); gd.addColorStop(1,d.color+'00');
+      ctx.beginPath(); ctx.arc(d.x,d.y,d.sz*2,0,Math.PI*2);
+      ctx.fillStyle=gd; ctx.fill();
+      ctx.beginPath(); ctx.arc(d.x,d.y,d.sz,0,Math.PI*2);
+      ctx.fillStyle=d.color; ctx.shadowColor=d.color; ctx.shadowBlur=12; ctx.fill(); ctx.shadowBlur=0;
+    });
+
+    // Center cross
+    ctx.beginPath(); ctx.arc(cx,cy,2.5,0,Math.PI*2);
+    ctx.fillStyle='#f5c518'; ctx.shadowColor='#f5c518'; ctx.shadowBlur=8; ctx.fill(); ctx.shadowBlur=0;
+
+    // Labels
+    ctx.font='8px Share Tech Mono'; ctx.fillStyle='#1e2030'; ctx.textAlign='center';
+    ctx.fillText('N', cx, cy-r+12);
+    ctx.fillText('S', cx, cy+r-6);
+    ctx.fillStyle='#1a1c2c'; ctx.textAlign='left';
+    ctx.fillText('E', cx+r-14, cy+4);
+    ctx.textAlign='right';
+    ctx.fillText('W', cx-r+14, cy+4);
+
+    angle = (angle + 1.2) % 360;
+    ST.radarAF = requestAnimationFrame(frame);
+  }
+  frame();
+}
+function stopRadar() {
+  if (ST.radarAF) { cancelAnimationFrame(ST.radarAF); ST.radarAF=null; }
+}
+
+// ══════════════════════════════════════════════
+// CLOCK
+// ══════════════════════════════════════════════
+function updateClock() {
+  qs('#live-clock').textContent = new Date().toLocaleTimeString('uk-UA',{hour12:false});
+}
+setInterval(updateClock, 1000); updateClock();
+
+// Update ticker animation
+let tickerMsgs = ['UPLINK ACTIVE','DATA SYNC','SCANNING','MONITORING','LIVE FEED'];
+let tickerIdx  = 0;
+setInterval(() => {
+  tickerIdx = (tickerIdx+1) % tickerMsgs.length;
+  qs('#update-ticker').textContent = tickerMsgs[tickerIdx];
+}, 4000);
+
+// ══════════════════════════════════════════════
+// TOAST
+// ══════════════════════════════════════════════
+function showToast(msg, ms=2800) {
+  const el = qs('#toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.classList.remove('show'), ms);
+}
+
+// ══════════════════════════════════════════════
+// EXTERNAL
+// ══════════════════════════════════════════════
+function openSupport() {
+  showToast('💛 Дякуємо за підтримку КОНТУРУ!');
+  setTimeout(() => window.open('https://send.monobank.ua','_blank'), 700);
+}
+
+// ══════════════════════════════════════════════
+// KEYBOARD SHORTCUTS
+// ══════════════════════════════════════════════
+document.addEventListener('keydown', e => {
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const tag = document.activeElement?.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+
+  switch(e.key) {
+    case 'Escape':
+      if (ST.radar) { closeRadar(); break; }
+      if (qsa('.f-screen.open').length) { qsa('.f-screen.open').forEach(s=>s.classList.remove('open')); break; }
+      if (qs('#menu-panel.open')) { closeMenu(); break; }
+      if (ST.sheet) { closeSheet(); break; }
+      break;
+    case 'r': case 'R': ST.radar ? closeRadar() : openRadar(); break;
+    case 'm': case 'M': qs('#menu-panel.open') ? closeMenu() : openMenu(); break;
+    case 's': case 'S': toggleSheet(); break;
+    case 'h': case 'H': map?.flyTo(CFG.center, CFG.zoom, {animate:true}); break;
+    case '1': switchTab('active'); openSheet(); break;
+    case '2': switchTab('past');   openSheet(); break;
+    case '3': switchTab('stats');  openSheet(); break;
+  }
+});
+
+// ══════════════════════════════════════════════
+// UTILS
+// ══════════════════════════════════════════════
+const qs  = s => document.querySelector(s);
+const qsa = s => [...document.querySelectorAll(s)];
+
+// ══════════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════════
+initMap();
+
+// Load data
+fetchData();
+setInterval(() => { if (ST.settings.auto) fetchData(); }, CFG.refreshMs);
+
+// Demo data after 1s if still empty
+setTimeout(() => {
+  if (ST.alerts.length === 0) {
+    ST.alerts    = demoAlerts();
+    ST.stats     = demoStats(ST.alerts);
+    ST.lastFetch = new Date();
+    renderAll();
+    showToast('📡 Завантажено демо-дан', 3000);
+  }
+}, 1200);
+
+// Greeting after 2.5s
+setTimeout(() => {
+  const cnt = getActiveAlerts().length;
+  if (cnt > 0) showToast(`⚠ ${cnt} активних загроз зараз`);
+}, 2600);
+</script>
+</body>
+</html>
