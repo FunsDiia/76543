@@ -1,0 +1,53 @@
+name: 🛡 Parse Air Threats
+
+on:
+  schedule:
+    - cron: '*/3 * * * *'   # every 3 minutes
+  workflow_dispatch:          # manual trigger
+
+permissions:
+  contents: write
+
+jobs:
+  parse:
+    name: Parse Telegram channels
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+
+    steps:
+      - name: Checkout gh-pages branch
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install --quiet \
+            telethon==1.36.0 \
+            google-generativeai==0.7.2 \
+            python-dateutil \
+            aiohttp
+
+      - name: Run parser
+        env:
+          TG_API_ID:         ${{ secrets.TG_API_ID }}
+          TG_API_HASH:       ${{ secrets.TG_API_HASH }}
+          TG_SESSION:        ${{ secrets.TG_SESSION_STRING }}
+          GEMINI_API_KEY:    ${{ secrets.GEMINI_API_KEY }}
+        run: python parser/parse.py
+
+      - name: Commit & push data
+        run: |
+          git config user.name  "kontur-bot"
+          git config user.email "bot@kontur.dev"
+          git add data/
+          git diff --staged --quiet || \
+            git commit -m "🛡 alerts $(date -u +'%H:%M %d.%m.%Y')" && \
+            git push
